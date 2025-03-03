@@ -10,6 +10,13 @@ type TelegramClient interface {
 	GetUpdates(ctx context.Context, offset int) ([]Update, error)
 
 	SendUpdate(ctx context.Context, update interface{}) error
+
+	SetMyCommands(ctx context.Context, commands []BotCommand) error
+}
+
+type BotCommand struct {
+	Command     string `json:"command"`
+	Description string `json:"description"`
 }
 
 type Update struct {

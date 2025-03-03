@@ -154,3 +154,57 @@ func (c *TelegramClient) GetUpdates(ctx context.Context, offset int) ([]clients.
 
 	return updateResponse.Result, nil
 }
+
+func (c *TelegramClient) SetMyCommands(ctx context.Context, commands []clients.BotCommand) error {
+	url := fmt.Sprintf("%s/setMyCommands", c.baseURL)
+
+	data := map[string]interface{}{
+		"commands": commands,
+	}
+
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return c.sanitizeError(err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return c.sanitizeError(err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return c.sanitizeError(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errorResponse struct {
+			Description string `json:"description"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&errorResponse); err != nil {
+			return fmt.Errorf("ошибка при установке команд бота: статус %d", resp.StatusCode)
+		}
+
+		return fmt.Errorf("ошибка при установке команд бота: %s", errorResponse.Description)
+	}
+
+	var response struct {
+		Ok     bool   `json:"ok"`
+		Result bool   `json:"result"`
+		Error  string `json:"description,omitempty"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return fmt.Errorf("ошибка при декодировании ответа: %w", c.sanitizeError(err))
+	}
+
+	if !response.Ok {
+		return fmt.Errorf("ошибка при установке команд бота: %s", response.Error)
+	}
+
+	return nil
+}

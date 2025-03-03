@@ -13,8 +13,9 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1/v1_bot"
 	"github.com/central-university-dev/go-Matthew11K/internal/application/services"
 	"github.com/central-university-dev/go-Matthew11K/internal/config"
+	"github.com/central-university-dev/go-Matthew11K/internal/domain/clients"
 	domainservices "github.com/central-university-dev/go-Matthew11K/internal/domain/services"
-	"github.com/central-university-dev/go-Matthew11K/internal/infrastructure/clients"
+	infraclients "github.com/central-university-dev/go-Matthew11K/internal/infrastructure/clients"
 	"github.com/central-university-dev/go-Matthew11K/internal/infrastructure/repositories/memory"
 	"github.com/central-university-dev/go-Matthew11K/internal/telegram"
 	"github.com/central-university-dev/go-Matthew11K/pkg"
@@ -33,14 +34,32 @@ func main() {
 	cfg := config.LoadConfig()
 
 	chatStateRepo := memory.NewChatStateRepository()
-	scrapperClient, err := clients.NewScrapperClient(cfg.ScrapperBaseURL)
+	scrapperClient, err := infraclients.NewScrapperClient(cfg.ScrapperBaseURL)
 	if err != nil {
 		appLogger.Error("Ошибка при создании клиента скраппера",
 			"error", err,
 		)
 		os.Exit(1)
 	}
-	telegramClient := clients.NewTelegramClient(cfg.TelegramBotToken)
+	telegramClient := infraclients.NewTelegramClient(cfg.TelegramBotToken)
+
+	botCommands := []clients.BotCommand{
+		{Command: "start", Description: "Начать работу с ботом"},
+		{Command: "help", Description: "Получить справку о командах"},
+		{Command: "track", Description: "Отслеживать ссылку"},
+		{Command: "untrack", Description: "Прекратить отслеживание ссылки"},
+		{Command: "list", Description: "Список отслеживаемых ссылок"},
+	}
+
+	ctx := context.Background()
+	if err := telegramClient.SetMyCommands(ctx, botCommands); err != nil {
+		appLogger.Error("Ошибка при регистрации команд бота",
+			"error", err,
+		)
+	} else {
+		appLogger.Info("Команды бота успешно зарегистрированы")
+	}
+
 	linkAnalyzer := domainservices.NewLinkAnalyzer()
 
 	botService := services.NewBotService(
