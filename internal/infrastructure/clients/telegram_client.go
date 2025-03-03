@@ -29,6 +29,11 @@ func NewTelegramClient(token string) clients.TelegramClient {
 	}
 }
 
+// SetBaseURL устанавливает базовый URL для API Telegram (используется в тестах).
+func (c *TelegramClient) SetBaseURL(url string) {
+	c.baseURL = url
+}
+
 func (c *TelegramClient) sanitizeError(err error) error {
 	if err == nil {
 		return nil

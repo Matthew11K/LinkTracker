@@ -99,8 +99,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	githubClient := clients.NewGitHubClient(cfg.GitHubAPIToken)
-	stackoverflowClient := clients.NewStackOverflowClient(cfg.StackOverflowAPIToken)
+	githubClient := clients.NewGitHubClient(cfg.GitHubAPIToken, "")
+	stackoverflowClient := clients.NewStackOverflowClient(cfg.StackOverflowAPIToken, "")
 
 	scrapperService := services.NewScrapperService(
 		linkRepo,

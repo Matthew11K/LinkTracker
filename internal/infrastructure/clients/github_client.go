@@ -12,17 +12,21 @@ import (
 
 type GitHubClient struct {
 	httpClient *http.Client
-	baseURL    string
 	token      string
+	baseURL    string
 }
 
-func NewGitHubClient(token string) clients.GitHubClient {
+func NewGitHubClient(token, baseURL string) clients.GitHubClient {
+	if baseURL == "" {
+		baseURL = "https://api.github.com"
+	}
+
 	return &GitHubClient{
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
-		baseURL: "https://api.github.com",
 		token:   token,
+		baseURL: baseURL,
 	}
 }
 

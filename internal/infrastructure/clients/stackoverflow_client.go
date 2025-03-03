@@ -16,12 +16,16 @@ type StackOverflowClient struct {
 	key        string
 }
 
-func NewStackOverflowClient(key string) clients.StackOverflowClient {
+func NewStackOverflowClient(key, baseURL string) clients.StackOverflowClient {
+	if baseURL == "" {
+		baseURL = "https://api.stackexchange.com/2.3"
+	}
+
 	return &StackOverflowClient{
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
-		baseURL: "https://api.stackexchange.com/2.3",
+		baseURL: baseURL,
 		key:     key,
 	}
 }
