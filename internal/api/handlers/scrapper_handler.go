@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"math"
 	"net/url"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
@@ -47,12 +48,14 @@ func (h *ScrapperHandler) TgChatIDPost(ctx context.Context, params v1_scrapper.T
 	return &v1_scrapper.TgChatIDPostOK{}, nil
 }
 
-func (h *ScrapperHandler) TgChatIDDelete(ctx context.Context, params v1_scrapper.TgChatIDDeleteParams) (v1_scrapper.TgChatIDDeleteRes, error) {
+func (h *ScrapperHandler) TgChatIDDelete(ctx context.Context,
+	params v1_scrapper.TgChatIDDeleteParams) (v1_scrapper.TgChatIDDeleteRes, error) {
 	if err := h.scrapperService.DeleteChat(ctx, params.ID); err != nil {
 		if _, ok := err.(*domainerrors.ErrChatNotFound); ok {
 			errResp := &v1_scrapper.TgChatIDDeleteNotFound{
 				Description: v1_scrapper.NewOptString("Чат не найден"),
 			}
+
 			return errResp, err
 		}
 
@@ -66,7 +69,8 @@ func (h *ScrapperHandler) TgChatIDDelete(ctx context.Context, params v1_scrapper
 	return &v1_scrapper.TgChatIDDeleteOK{}, nil
 }
 
-func (h *ScrapperHandler) LinksPost(ctx context.Context, req *v1_scrapper.AddLinkRequest, params v1_scrapper.LinksPostParams) (v1_scrapper.LinksPostRes, error) {
+func (h *ScrapperHandler) LinksPost(ctx context.Context, req *v1_scrapper.AddLinkRequest,
+	params v1_scrapper.LinksPostParams) (v1_scrapper.LinksPostRes, error) {
 	var linkURL string
 	if req.Link.IsSet() {
 		linkURL = req.Link.Value.String()
@@ -116,7 +120,8 @@ func (h *ScrapperHandler) LinksPost(ctx context.Context, req *v1_scrapper.AddLin
 	return resp, nil
 }
 
-func (h *ScrapperHandler) LinksDelete(ctx context.Context, req *v1_scrapper.RemoveLinkRequest, params v1_scrapper.LinksDeleteParams) (v1_scrapper.LinksDeleteRes, error) {
+func (h *ScrapperHandler) LinksDelete(ctx context.Context, req *v1_scrapper.RemoveLinkRequest,
+	params v1_scrapper.LinksDeleteParams) (v1_scrapper.LinksDeleteRes, error) {
 	var linkURL string
 	if req.Link.IsSet() {
 		linkURL = req.Link.Value.String()
@@ -134,6 +139,7 @@ func (h *ScrapperHandler) LinksDelete(ctx context.Context, req *v1_scrapper.Remo
 			errResp := &v1_scrapper.LinksDeleteNotFound{
 				Description: v1_scrapper.NewOptString("Ссылка не найдена"),
 			}
+
 			return errResp, err
 		}
 
@@ -167,9 +173,18 @@ func (h *ScrapperHandler) LinksGet(ctx context.Context, params v1_scrapper.Links
 		return errResp, err
 	}
 
+	linksCount := len(links)
+
+	var size int32
+	if linksCount > math.MaxInt32 {
+		size = math.MaxInt32
+	} else {
+		size = int32(linksCount)
+	}
+
 	resp := &v1_scrapper.ListLinksResponse{
 		Links: make([]v1_scrapper.LinkResponse, 0, len(links)),
-		Size:  v1_scrapper.NewOptInt32(int32(len(links))),
+		Size:  v1_scrapper.NewOptInt32(size),
 	}
 
 	for _, link := range links {

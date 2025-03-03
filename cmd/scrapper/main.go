@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	"log/slog"
+
 	"github.com/central-university-dev/go-Matthew11K/internal/api/handlers"
 	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1/v1_scrapper"
 	"github.com/central-university-dev/go-Matthew11K/internal/application/services"
@@ -19,6 +21,61 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/pkg"
 	"github.com/joho/godotenv"
 )
+
+func gracefulShutdown(server *http.Server, scheduler *scheduler.Scheduler, appLogger *slog.Logger) {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	sig := <-sigCh
+	appLogger.Info("Получен сигнал завершения",
+		"signal", sig.String(),
+	)
+
+	scheduler.Stop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		appLogger.Error("Ошибка при остановке HTTP сервера",
+			"error", err,
+		)
+	}
+
+	appLogger.Info("Сервер успешно остановлен")
+}
+
+func startInitialCheck(scrapperService *services.ScrapperService, appLogger *slog.Logger) {
+	go func() {
+		time.Sleep(10 * time.Second)
+		appLogger.Info("Запуск первоначальной проверки обновлений")
+
+		ctx := context.Background()
+		if err := scrapperService.CheckUpdates(ctx); err != nil {
+			appLogger.Error("Ошибка при первоначальной проверке обновлений",
+				"error", err,
+			)
+		}
+	}()
+}
+
+func startHTTPServer(server *http.Server, port int, appLogger *slog.Logger) {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		appLogger.Info("Запуск HTTP сервера скраппера",
+			"port", port,
+		)
+
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			appLogger.Error("Ошибка при запуске HTTP сервера",
+				"error", err,
+			)
+			sigCh <- syscall.SIGTERM
+		}
+	}()
+}
 
 func main() {
 	appLogger := pkg.NewLogger(os.Stdout)
@@ -33,6 +90,7 @@ func main() {
 
 	linkRepo := memory.NewLinkRepository()
 	chatRepo := memory.NewChatRepository()
+
 	botClient, err := clients.NewBotAPIClient(cfg.BotBaseURL)
 	if err != nil {
 		appLogger.Error("Ошибка при создании клиента бота",
@@ -40,6 +98,7 @@ func main() {
 		)
 		os.Exit(1)
 	}
+
 	githubClient := clients.NewGitHubClient(cfg.GitHubAPIToken)
 	stackoverflowClient := clients.NewStackOverflowClient(cfg.StackOverflowAPIToken)
 
@@ -63,57 +122,16 @@ func main() {
 	}
 
 	sch := scheduler.NewScheduler(scrapperService, cfg.SchedulerCheckInterval, appLogger)
-
-	go func() {
-		time.Sleep(10 * time.Second)
-		appLogger.Info("Запуск первоначальной проверки обновлений")
-
-		ctx := context.Background()
-		if err := scrapperService.CheckUpdates(ctx); err != nil {
-			appLogger.Error("Ошибка при первоначальной проверке обновлений",
-				"error", err,
-			)
-		}
-	}()
+	startInitialCheck(scrapperService, appLogger)
 
 	httpServer := &http.Server{
-		Addr:    ":" + strconv.Itoa(cfg.ScrapperServerPort),
-		Handler: server,
+		Addr:              ":" + strconv.Itoa(cfg.ScrapperServerPort),
+		Handler:           server,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		appLogger.Info("Запуск HTTP сервера скраппера",
-			"port", cfg.ScrapperServerPort,
-		)
-
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			appLogger.Error("Ошибка при запуске HTTP сервера",
-				"error", err,
-			)
-			sigCh <- syscall.SIGTERM
-		}
-	}()
-
+	startHTTPServer(httpServer, cfg.ScrapperServerPort, appLogger)
 	sch.Start()
 
-	sig := <-sigCh
-	appLogger.Info("Получен сигнал завершения",
-		"signal", sig.String(),
-	)
-
-	sch.Stop()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := httpServer.Shutdown(ctx); err != nil {
-		appLogger.Error("Ошибка при остановке HTTP сервера",
-			"error", err,
-		)
-	}
-
-	appLogger.Info("Сервер успешно остановлен")
+	gracefulShutdown(httpServer, sch, appLogger)
 }

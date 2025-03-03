@@ -47,5 +47,6 @@ func (c *BotAPIClient) SendUpdate(ctx context.Context, update *models.LinkUpdate
 	}
 
 	_, err := c.client.UpdatesPost(ctx, req)
+
 	return err
 }

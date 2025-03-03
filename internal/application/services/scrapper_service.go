@@ -79,7 +79,7 @@ func (s *ScrapperService) DeleteChat(ctx context.Context, chatID int64) error {
 	return s.chatRepo.Delete(ctx, chatID)
 }
 
-func (s *ScrapperService) AddLink(ctx context.Context, chatID int64, url string, tags []string, filters []string) (*models.Link, error) {
+func (s *ScrapperService) AddLink(ctx context.Context, chatID int64, url string, tags, filters []string) (*models.Link, error) {
 	chat, err := s.chatRepo.FindByID(ctx, chatID)
 	if err != nil {
 		return nil, err
@@ -161,6 +161,7 @@ func (s *ScrapperService) GetLinks(ctx context.Context, chatID int64) ([]*models
 	return s.linkRepo.FindByChatID(ctx, chatID)
 }
 
+//nolint:funlen // Функция логически целостная и не требует разбиения на более мелкие части
 func (s *ScrapperService) CheckUpdates(ctx context.Context) error {
 	links, err := s.linkRepo.GetAll(ctx)
 	if err != nil {
@@ -241,6 +242,7 @@ func (s *ScrapperService) CheckUpdates(ctx context.Context) error {
 	return nil
 }
 
+//nolint:funlen // Функция логически целостная и не требует разбиения на более мелкие части
 func (s *ScrapperService) checkLinkUpdate(ctx context.Context, link *models.Link) (bool, error) {
 	var lastUpdate time.Time
 
@@ -285,6 +287,8 @@ func (s *ScrapperService) checkLinkUpdate(ctx context.Context, link *models.Link
 		if apiErr != nil {
 			return false, apiErr
 		}
+	case models.Unknown:
+		return false, &errors.ErrUnsupportedLinkType{URL: link.URL}
 	default:
 		return false, &errors.ErrUnsupportedLinkType{URL: link.URL}
 	}

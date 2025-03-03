@@ -26,7 +26,7 @@ func NewLinkRepository() *LinkRepository {
 	}
 }
 
-func (r *LinkRepository) Save(ctx context.Context, link *models.Link) error {
+func (r *LinkRepository) Save(_ context.Context, link *models.Link) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -49,7 +49,7 @@ func (r *LinkRepository) Save(ctx context.Context, link *models.Link) error {
 	return nil
 }
 
-func (r *LinkRepository) FindByID(ctx context.Context, id int64) (*models.Link, error) {
+func (r *LinkRepository) FindByID(_ context.Context, id int64) (*models.Link, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -61,7 +61,7 @@ func (r *LinkRepository) FindByID(ctx context.Context, id int64) (*models.Link, 
 	return link, nil
 }
 
-func (r *LinkRepository) FindByURL(ctx context.Context, url string) (*models.Link, error) {
+func (r *LinkRepository) FindByURL(_ context.Context, url string) (*models.Link, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -73,7 +73,7 @@ func (r *LinkRepository) FindByURL(ctx context.Context, url string) (*models.Lin
 	return r.links[id], nil
 }
 
-func (r *LinkRepository) FindByChatID(ctx context.Context, chatID int64) ([]*models.Link, error) {
+func (r *LinkRepository) FindByChatID(_ context.Context, chatID int64) ([]*models.Link, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -92,7 +92,7 @@ func (r *LinkRepository) FindByChatID(ctx context.Context, chatID int64) ([]*mod
 	return links, nil
 }
 
-func (r *LinkRepository) DeleteByURL(ctx context.Context, url string, chatID int64) error {
+func (r *LinkRepository) DeleteByURL(_ context.Context, url string, chatID int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -144,7 +144,7 @@ func (r *LinkRepository) DeleteByURL(ctx context.Context, url string, chatID int
 	return nil
 }
 
-func (r *LinkRepository) GetAll(ctx context.Context) ([]*models.Link, error) {
+func (r *LinkRepository) GetAll(_ context.Context) ([]*models.Link, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -156,7 +156,7 @@ func (r *LinkRepository) GetAll(ctx context.Context) ([]*models.Link, error) {
 	return links, nil
 }
 
-func (r *LinkRepository) Update(ctx context.Context, link *models.Link) error {
+func (r *LinkRepository) Update(_ context.Context, link *models.Link) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -170,7 +170,7 @@ func (r *LinkRepository) Update(ctx context.Context, link *models.Link) error {
 	return nil
 }
 
-func (r *LinkRepository) AddChatLink(ctx context.Context, chatID int64, linkID int64) error {
+func (r *LinkRepository) AddChatLink(_ context.Context, chatID, linkID int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

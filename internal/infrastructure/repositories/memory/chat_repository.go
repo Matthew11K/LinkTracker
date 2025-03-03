@@ -20,7 +20,7 @@ func NewChatRepository() *ChatRepository {
 	}
 }
 
-func (r *ChatRepository) Save(ctx context.Context, chat *models.Chat) error {
+func (r *ChatRepository) Save(_ context.Context, chat *models.Chat) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -35,7 +35,7 @@ func (r *ChatRepository) Save(ctx context.Context, chat *models.Chat) error {
 	return nil
 }
 
-func (r *ChatRepository) FindByID(ctx context.Context, id int64) (*models.Chat, error) {
+func (r *ChatRepository) FindByID(_ context.Context, id int64) (*models.Chat, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -47,7 +47,7 @@ func (r *ChatRepository) FindByID(ctx context.Context, id int64) (*models.Chat, 
 	return chat, nil
 }
 
-func (r *ChatRepository) Delete(ctx context.Context, id int64) error {
+func (r *ChatRepository) Delete(_ context.Context, id int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -60,7 +60,7 @@ func (r *ChatRepository) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (r *ChatRepository) Update(ctx context.Context, chat *models.Chat) error {
+func (r *ChatRepository) Update(_ context.Context, chat *models.Chat) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -69,13 +69,12 @@ func (r *ChatRepository) Update(ctx context.Context, chat *models.Chat) error {
 	}
 
 	chat.UpdatedAt = time.Now()
-
 	r.chats[chat.ID] = chat
 
 	return nil
 }
 
-func (r *ChatRepository) AddLink(ctx context.Context, chatID int64, linkID int64) error {
+func (r *ChatRepository) AddLink(_ context.Context, chatID, linkID int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -86,7 +85,7 @@ func (r *ChatRepository) AddLink(ctx context.Context, chatID int64, linkID int64
 
 	for _, id := range chat.Links {
 		if id == linkID {
-			return nil
+			return &errors.ErrLinkAlreadyExists{URL: "ID: " + string(rune(linkID))}
 		}
 	}
 
@@ -96,7 +95,7 @@ func (r *ChatRepository) AddLink(ctx context.Context, chatID int64, linkID int64
 	return nil
 }
 
-func (r *ChatRepository) RemoveLink(ctx context.Context, chatID int64, linkID int64) error {
+func (r *ChatRepository) RemoveLink(_ context.Context, chatID, linkID int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -125,7 +124,7 @@ func (r *ChatRepository) RemoveLink(ctx context.Context, chatID int64, linkID in
 	return nil
 }
 
-func (r *ChatRepository) GetAll(ctx context.Context) ([]*models.Chat, error) {
+func (r *ChatRepository) GetAll(_ context.Context) ([]*models.Chat, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

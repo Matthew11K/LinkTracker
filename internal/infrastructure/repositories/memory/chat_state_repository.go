@@ -20,7 +20,7 @@ func NewChatStateRepository() *ChatStateRepository {
 	}
 }
 
-func (r *ChatStateRepository) GetState(ctx context.Context, chatID int64) (models.ChatState, error) {
+func (r *ChatStateRepository) GetState(_ context.Context, chatID int64) (models.ChatState, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -32,7 +32,7 @@ func (r *ChatStateRepository) GetState(ctx context.Context, chatID int64) (model
 	return state, nil
 }
 
-func (r *ChatStateRepository) SetState(ctx context.Context, chatID int64, state models.ChatState) error {
+func (r *ChatStateRepository) SetState(_ context.Context, chatID int64, state models.ChatState) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -41,7 +41,7 @@ func (r *ChatStateRepository) SetState(ctx context.Context, chatID int64, state 
 	return nil
 }
 
-func (r *ChatStateRepository) GetData(ctx context.Context, chatID int64, key string) (interface{}, error) {
+func (r *ChatStateRepository) GetData(_ context.Context, chatID int64, key string) (interface{}, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -58,7 +58,7 @@ func (r *ChatStateRepository) GetData(ctx context.Context, chatID int64, key str
 	return value, nil
 }
 
-func (r *ChatStateRepository) SetData(ctx context.Context, chatID int64, key string, value interface{}) error {
+func (r *ChatStateRepository) SetData(_ context.Context, chatID int64, key string, value interface{}) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -71,7 +71,7 @@ func (r *ChatStateRepository) SetData(ctx context.Context, chatID int64, key str
 	return nil
 }
 
-func (r *ChatStateRepository) ClearData(ctx context.Context, chatID int64) error {
+func (r *ChatStateRepository) ClearData(_ context.Context, chatID int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

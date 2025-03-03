@@ -67,7 +67,7 @@ func (c *ScrapperClient) DeleteChat(ctx context.Context, chatID int64) error {
 	}
 }
 
-func (c *ScrapperClient) AddLink(ctx context.Context, chatID int64, linkURL string, tags []string, filters []string) (*models.Link, error) {
+func (c *ScrapperClient) AddLink(ctx context.Context, chatID int64, linkURL string, tags, filters []string) (*models.Link, error) {
 	parsedURL, err := url.Parse(linkURL)
 	if err != nil {
 		return nil, &errors.ErrInvalidArgument{Message: "некорректный URL"}
@@ -88,9 +88,11 @@ func (c *ScrapperClient) AddLink(ctx context.Context, chatID int64, linkURL stri
 		if err.Error() == "Ссылка уже существует" {
 			return nil, &errors.ErrLinkAlreadyExists{URL: linkURL}
 		}
+
 		if err.Error() == "Неподдерживаемый тип ссылки" {
 			return nil, &errors.ErrUnsupportedLinkType{URL: linkURL}
 		}
+
 		return nil, &errors.ErrInternalServer{Message: "не удалось выполнить запрос: " + err.Error()}
 	}
 
@@ -131,6 +133,7 @@ func (c *ScrapperClient) RemoveLink(ctx context.Context, chatID int64, linkURL s
 		if err.Error() == "Ссылка не найдена" {
 			return nil, &errors.ErrLinkNotFound{URL: linkURL}
 		}
+
 		return nil, &errors.ErrInternalServer{Message: "не удалось выполнить запрос: " + err.Error()}
 	}
 
@@ -169,7 +172,8 @@ func (c *ScrapperClient) GetLinks(ctx context.Context, chatID int64) ([]*models.
 
 	links := make([]*models.Link, 0, len(listResp.Links))
 
-	for _, linkResp := range listResp.Links {
+	for i := range listResp.Links {
+		linkResp := &listResp.Links[i]
 		link := &models.Link{
 			ID:      linkResp.ID.Or(0),
 			Tags:    linkResp.Tags,

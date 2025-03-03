@@ -34,8 +34,9 @@ func (a *LinkAnalyzer) AnalyzeLink(url string) models.LinkType {
 
 func ParseGitHubURL(url string) (owner, repo string, err error) {
 	re := regexp.MustCompile(`^https?://(?:www\.)?github\.com/([^/]+)/([^/]+)(?:/.*)?$`)
+
 	matches := re.FindStringSubmatch(url)
-	if matches == nil || len(matches) < 3 {
+	if len(matches) < 3 {
 		return "", "", &errors.ErrInvalidURL{URL: url}
 	}
 
@@ -44,8 +45,9 @@ func ParseGitHubURL(url string) (owner, repo string, err error) {
 
 func ParseStackOverflowURL(url string) (questionID int64, err error) {
 	re := regexp.MustCompile(`^https?://(?:www\.)?stackoverflow\.com/questions/(\d+)(?:/.*)?$`)
+
 	matches := re.FindStringSubmatch(url)
-	if matches == nil || len(matches) < 2 {
+	if len(matches) < 2 {
 		return 0, &errors.ErrInvalidURL{URL: url}
 	}
 

@@ -57,12 +57,14 @@ func (s *BotService) ProcessCommand(ctx context.Context, command *models.Command
 		return s.handleUntrackCommand(ctx, command)
 	case models.CommandList:
 		return s.handleListCommand(ctx, command)
+	case models.CommandUnknown:
+		return "Неизвестная команда. Введите /help для просмотра доступных команд.", &errors.ErrUnknownCommand{Command: string(command.Type)}
 	default:
 		return "Неизвестная команда. Введите /help для просмотра доступных команд.", &errors.ErrUnknownCommand{Command: string(command.Type)}
 	}
 }
 
-func (s *BotService) ProcessMessage(ctx context.Context, chatID int64, userID int64, text string, username string) (string, error) {
+func (s *BotService) ProcessMessage(ctx context.Context, chatID, userID int64, text, username string) (string, error) {
 	state, err := s.chatStateRepo.GetState(ctx, chatID)
 	if err != nil {
 		return "", err
