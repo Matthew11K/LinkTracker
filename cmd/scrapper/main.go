@@ -13,8 +13,9 @@ import (
 
 	"github.com/central-university-dev/go-Matthew11K/internal/api/handlers"
 	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1/v1_scrapper"
-	"github.com/central-university-dev/go-Matthew11K/internal/application/services"
+	appservices "github.com/central-university-dev/go-Matthew11K/internal/application/services"
 	"github.com/central-university-dev/go-Matthew11K/internal/config"
+	domainservices "github.com/central-university-dev/go-Matthew11K/internal/domain/services"
 	"github.com/central-university-dev/go-Matthew11K/internal/infrastructure/clients"
 	"github.com/central-university-dev/go-Matthew11K/internal/infrastructure/repositories/memory"
 	"github.com/central-university-dev/go-Matthew11K/internal/scheduler"
@@ -45,7 +46,7 @@ func gracefulShutdown(server *http.Server, scheduler *scheduler.Scheduler, appLo
 	appLogger.Info("Сервер успешно остановлен")
 }
 
-func startInitialCheck(scrapperService *services.ScrapperService, appLogger *slog.Logger) {
+func startInitialCheck(scrapperService *appservices.ScrapperService, appLogger *slog.Logger) {
 	go func() {
 		time.Sleep(10 * time.Second)
 		appLogger.Info("Запуск первоначальной проверки обновлений")
@@ -101,13 +102,15 @@ func main() {
 
 	githubClient := clients.NewGitHubClient(cfg.GitHubAPIToken, "")
 	stackoverflowClient := clients.NewStackOverflowClient(cfg.StackOverflowAPIToken, "")
+	linkAnalyzer := domainservices.NewLinkAnalyzer()
 
-	scrapperService := services.NewScrapperService(
+	scrapperService := appservices.NewScrapperService(
 		linkRepo,
 		chatRepo,
 		botClient,
 		githubClient,
 		stackoverflowClient,
+		linkAnalyzer,
 		appLogger,
 	)
 

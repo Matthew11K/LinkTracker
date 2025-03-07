@@ -18,6 +18,7 @@ import (
 	domainErrors "github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 	repoMocks "github.com/central-university-dev/go-Matthew11K/internal/domain/repositories/mocks"
+	domainServices "github.com/central-university-dev/go-Matthew11K/internal/domain/services"
 )
 
 type MockBotClient struct {
@@ -42,6 +43,7 @@ func TestScrapperService_AddLink(t *testing.T) {
 	mockBotClient := new(MockBotClient)
 	mockGithubClient := clientMocks.NewGitHubClient(t)
 	mockStackOverflowClient := clientMocks.NewStackOverflowClient(t)
+	linkAnalyzer := domainServices.NewLinkAnalyzer()
 
 	mockChat := &models.Chat{
 		ID:        chatID,
@@ -72,6 +74,7 @@ func TestScrapperService_AddLink(t *testing.T) {
 		mockBotClient,
 		mockGithubClient,
 		mockStackOverflowClient,
+		linkAnalyzer,
 		logger,
 	)
 
@@ -102,6 +105,7 @@ func TestScrapperService_AddDuplicateLink(t *testing.T) {
 	mockBotClient := new(MockBotClient)
 	mockGithubClient := clientMocks.NewGitHubClient(t)
 	mockStackOverflowClient := clientMocks.NewStackOverflowClient(t)
+	linkAnalyzer := domainServices.NewLinkAnalyzer()
 
 	existingLink := &models.Link{
 		ID:        existingLinkID,
@@ -127,6 +131,7 @@ func TestScrapperService_AddDuplicateLink(t *testing.T) {
 		mockBotClient,
 		mockGithubClient,
 		mockStackOverflowClient,
+		linkAnalyzer,
 		logger,
 	)
 
@@ -152,6 +157,7 @@ func TestScrapperService_CheckUpdates_GitHubError(t *testing.T) {
 	mockBotClient := new(MockBotClient)
 	mockGithubClient := clientMocks.NewGitHubClient(t)
 	mockStackOverflowClient := clientMocks.NewStackOverflowClient(t)
+	linkAnalyzer := domainServices.NewLinkAnalyzer()
 
 	githubLink := &models.Link{
 		ID:        1,
@@ -174,6 +180,7 @@ func TestScrapperService_CheckUpdates_GitHubError(t *testing.T) {
 		mockBotClient,
 		mockGithubClient,
 		mockStackOverflowClient,
+		linkAnalyzer,
 		logger,
 	)
 
@@ -194,6 +201,7 @@ func TestScrapperService_CheckUpdates_StackOverflowError(t *testing.T) {
 	mockBotClient := new(MockBotClient)
 	mockGithubClient := clientMocks.NewGitHubClient(t)
 	mockStackOverflowClient := clientMocks.NewStackOverflowClient(t)
+	linkAnalyzer := domainServices.NewLinkAnalyzer()
 
 	stackOverflowLink := &models.Link{
 		ID:        1,
@@ -216,6 +224,7 @@ func TestScrapperService_CheckUpdates_StackOverflowError(t *testing.T) {
 		mockBotClient,
 		mockGithubClient,
 		mockStackOverflowClient,
+		linkAnalyzer,
 		logger,
 	)
 
@@ -236,6 +245,7 @@ func TestScrapperService_CheckUpdates_SendUpdateToSubscribedUsers(t *testing.T) 
 	mockBotClient := new(MockBotClient)
 	mockGithubClient := clientMocks.NewGitHubClient(t)
 	mockStackOverflowClient := clientMocks.NewStackOverflowClient(t)
+	linkAnalyzer := domainServices.NewLinkAnalyzer()
 
 	chatID1 := int64(123)
 	chatID2 := int64(456)
@@ -288,6 +298,7 @@ func TestScrapperService_CheckUpdates_SendUpdateToSubscribedUsers(t *testing.T) 
 		mockBotClient,
 		mockGithubClient,
 		mockStackOverflowClient,
+		linkAnalyzer,
 		logger,
 	)
 
@@ -310,6 +321,7 @@ func TestScrapperService_GitHub_HTTP_Errors(t *testing.T) {
 	mockBotClient := new(MockBotClient)
 	mockGithubClient := clientMocks.NewGitHubClient(t)
 	mockStackOverflowClient := clientMocks.NewStackOverflowClient(t)
+	linkAnalyzer := domainServices.NewLinkAnalyzer()
 
 	githubLink := &models.Link{
 		ID:        1,
@@ -346,6 +358,7 @@ func TestScrapperService_GitHub_HTTP_Errors(t *testing.T) {
 				mockBotClient,
 				mockGithubClient,
 				mockStackOverflowClient,
+				linkAnalyzer,
 				logger,
 			)
 
@@ -368,6 +381,7 @@ func TestScrapperService_StackOverflow_HTTP_Errors(t *testing.T) {
 	mockBotClient := new(MockBotClient)
 	mockGithubClient := clientMocks.NewGitHubClient(t)
 	mockStackOverflowClient := clientMocks.NewStackOverflowClient(t)
+	linkAnalyzer := domainServices.NewLinkAnalyzer()
 
 	stackOverflowLink := &models.Link{
 		ID:        1,
@@ -404,6 +418,7 @@ func TestScrapperService_StackOverflow_HTTP_Errors(t *testing.T) {
 				mockBotClient,
 				mockGithubClient,
 				mockStackOverflowClient,
+				linkAnalyzer,
 				logger,
 			)
 
@@ -426,6 +441,7 @@ func TestScrapperService_GitHub_InvalidJSON(t *testing.T) {
 	mockBotClient := new(MockBotClient)
 	mockGithubClient := clientMocks.NewGitHubClient(t)
 	mockStackOverflowClient := clientMocks.NewStackOverflowClient(t)
+	linkAnalyzer := domainServices.NewLinkAnalyzer()
 
 	githubLink := &models.Link{
 		ID:        1,
@@ -447,6 +463,7 @@ func TestScrapperService_GitHub_InvalidJSON(t *testing.T) {
 		mockBotClient,
 		mockGithubClient,
 		mockStackOverflowClient,
+		linkAnalyzer,
 		logger,
 	)
 
@@ -467,6 +484,7 @@ func TestScrapperService_StackOverflow_InvalidJSON(t *testing.T) {
 	mockBotClient := new(MockBotClient)
 	mockGithubClient := clientMocks.NewGitHubClient(t)
 	mockStackOverflowClient := clientMocks.NewStackOverflowClient(t)
+	linkAnalyzer := domainServices.NewLinkAnalyzer()
 
 	stackOverflowLink := &models.Link{
 		ID:        1,
@@ -488,6 +506,7 @@ func TestScrapperService_StackOverflow_InvalidJSON(t *testing.T) {
 		mockBotClient,
 		mockGithubClient,
 		mockStackOverflowClient,
+		linkAnalyzer,
 		logger,
 	)
 

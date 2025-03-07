@@ -32,6 +32,7 @@ func NewScrapperService(
 	botClient BotClient,
 	githubClient clients.GitHubClient,
 	stackoverflowClient clients.StackOverflowClient,
+	linkAnalyzer *services.LinkAnalyzer,
 	logger *slog.Logger,
 ) *ScrapperService {
 	return &ScrapperService{
@@ -40,7 +41,7 @@ func NewScrapperService(
 		botClient:           botClient,
 		githubClient:        githubClient,
 		stackoverflowClient: stackoverflowClient,
-		linkAnalyzer:        services.NewLinkAnalyzer(),
+		linkAnalyzer:        linkAnalyzer,
 		logger:              logger,
 	}
 }
