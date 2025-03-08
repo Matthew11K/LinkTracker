@@ -20,7 +20,6 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/internal/infrastructure/repositories/memory"
 	"github.com/central-university-dev/go-Matthew11K/internal/scheduler"
 	"github.com/central-university-dev/go-Matthew11K/pkg"
-	"github.com/joho/godotenv"
 )
 
 func gracefulShutdown(server *http.Server, scheduler *scheduler.Scheduler, appLogger *slog.Logger) {
@@ -80,12 +79,6 @@ func startHTTPServer(server *http.Server, port int, appLogger *slog.Logger) {
 
 func main() {
 	appLogger := pkg.NewLogger(os.Stdout)
-
-	if err := godotenv.Load(); err != nil {
-		appLogger.Error("Ошибка при загрузке .env файла",
-			"error", err,
-		)
-	}
 
 	cfg := config.LoadConfig()
 
