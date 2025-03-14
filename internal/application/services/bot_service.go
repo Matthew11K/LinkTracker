@@ -2,11 +2,12 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/clients"
-	"github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
+	domainerrors "github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/repositories"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/services"
@@ -58,9 +59,9 @@ func (s *BotService) ProcessCommand(ctx context.Context, command *models.Command
 	case models.CommandList:
 		return s.handleListCommand(ctx, command)
 	case models.CommandUnknown:
-		return "Неизвестная команда. Введите /help для просмотра доступных команд.", &errors.ErrUnknownCommand{Command: string(command.Type)}
+		return "Неизвестная команда. Введите /help для просмотра доступных команд.", &domainerrors.ErrUnknownCommand{Command: string(command.Type)}
 	default:
-		return "Неизвестная команда. Введите /help для просмотра доступных команд.", &errors.ErrUnknownCommand{Command: string(command.Type)}
+		return "Неизвестная команда. Введите /help для просмотра доступных команд.", &domainerrors.ErrUnknownCommand{Command: string(command.Type)}
 	}
 }
 
@@ -248,7 +249,8 @@ func (s *BotService) handleFiltersInput(ctx context.Context, chatID int64, text 
 
 	_, err = s.scrapperClient.AddLink(ctx, chatID, link, tags, filters)
 	if err != nil {
-		if _, ok := err.(*errors.ErrLinkAlreadyExists); ok {
+		var linkExistsErr *domainerrors.ErrLinkAlreadyExists
+		if errors.As(err, &linkExistsErr) {
 			return "Эта ссылка уже отслеживается.", nil
 		}
 
@@ -269,7 +271,8 @@ func (s *BotService) handleFiltersInput(ctx context.Context, chatID int64, text 
 func (s *BotService) handleUntrackLinkInput(ctx context.Context, chatID int64, text string) (string, error) {
 	_, err := s.scrapperClient.RemoveLink(ctx, chatID, text)
 	if err != nil {
-		if _, ok := err.(*errors.ErrLinkNotFound); ok {
+		var linkNotFoundErr *domainerrors.ErrLinkNotFound
+		if errors.As(err, &linkNotFoundErr) {
 			return "Ссылка не найдена или не отслеживается.", nil
 		}
 

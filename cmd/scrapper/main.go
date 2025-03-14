@@ -22,14 +22,9 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/pkg"
 )
 
-func gracefulShutdown(server *http.Server, scheduler *scheduler.Scheduler, appLogger *slog.Logger) {
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-
-	sig := <-sigCh
-	appLogger.Info("Получен сигнал завершения",
-		"signal", sig.String(),
-	)
+func gracefulShutdown(server *http.Server, scheduler *scheduler.Scheduler, stopCh <-chan struct{}, appLogger *slog.Logger) {
+	<-stopCh
+	appLogger.Info("Получен сигнал завершения")
 
 	scheduler.Stop()
 
@@ -45,23 +40,17 @@ func gracefulShutdown(server *http.Server, scheduler *scheduler.Scheduler, appLo
 	appLogger.Info("Сервер успешно остановлен")
 }
 
-func startInitialCheck(scrapperService *appservices.ScrapperService, appLogger *slog.Logger) {
-	go func() {
-		time.Sleep(10 * time.Second)
-		appLogger.Info("Запуск первоначальной проверки обновлений")
-
-		ctx := context.Background()
-		if err := scrapperService.CheckUpdates(ctx); err != nil {
-			appLogger.Error("Ошибка при первоначальной проверке обновлений",
-				"error", err,
-			)
-		}
-	}()
-}
-
-func startHTTPServer(server *http.Server, port int, appLogger *slog.Logger) {
+func startHTTPServer(server *http.Server, port int, stopCh chan<- struct{}, appLogger *slog.Logger) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigCh
+		appLogger.Info("Получен системный сигнал",
+			"signal", sig.String(),
+		)
+		close(stopCh)
+	}()
 
 	go func() {
 		appLogger.Info("Запуск HTTP сервера скраппера",
@@ -72,7 +61,7 @@ func startHTTPServer(server *http.Server, port int, appLogger *slog.Logger) {
 			appLogger.Error("Ошибка при запуске HTTP сервера",
 				"error", err,
 			)
-			sigCh <- syscall.SIGTERM
+			close(stopCh)
 		}
 	}()
 }
@@ -97,12 +86,13 @@ func main() {
 	stackoverflowClient := clients.NewStackOverflowClient(cfg.StackOverflowAPIToken, "")
 	linkAnalyzer := domainservices.NewLinkAnalyzer()
 
+	updaterFactory := domainservices.NewLinkUpdaterFactory(githubClient, stackoverflowClient)
+
 	scrapperService := appservices.NewScrapperService(
 		linkRepo,
 		chatRepo,
 		botClient,
-		githubClient,
-		stackoverflowClient,
+		updaterFactory,
 		linkAnalyzer,
 		appLogger,
 	)
@@ -118,7 +108,7 @@ func main() {
 	}
 
 	sch := scheduler.NewScheduler(scrapperService, cfg.SchedulerCheckInterval, appLogger)
-	startInitialCheck(scrapperService, appLogger)
+	sch.Start()
 
 	httpServer := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.ScrapperServerPort),
@@ -126,8 +116,9 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	startHTTPServer(httpServer, cfg.ScrapperServerPort, appLogger)
-	sch.Start()
+	stopCh := make(chan struct{})
 
-	gracefulShutdown(httpServer, sch, appLogger)
+	startHTTPServer(httpServer, cfg.ScrapperServerPort, stopCh, appLogger)
+
+	gracefulShutdown(httpServer, sch, stopCh, appLogger)
 }

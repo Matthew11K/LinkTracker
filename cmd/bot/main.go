@@ -23,14 +23,9 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/pkg"
 )
 
-func gracefulShutdown(server *http.Server, poller *telegram.Poller, appLogger *slog.Logger) {
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-
-	sig := <-sigCh
-	appLogger.Info("Получен сигнал завершения",
-		"signal", sig.String(),
-	)
+func gracefulShutdown(server *http.Server, poller *telegram.Poller, stopCh <-chan struct{}, appLogger *slog.Logger) {
+	<-stopCh
+	appLogger.Info("Получен сигнал завершения")
 
 	poller.Stop()
 
@@ -65,9 +60,17 @@ func setupTelegramCommands(telegramClient clients.TelegramClient, appLogger *slo
 	}
 }
 
-func startHTTPServer(server *http.Server, port int, appLogger *slog.Logger) {
+func startHTTPServer(server *http.Server, port int, stopCh chan<- struct{}, appLogger *slog.Logger) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigCh
+		appLogger.Info("Получен системный сигнал",
+			"signal", sig.String(),
+		)
+		close(stopCh)
+	}()
 
 	go func() {
 		appLogger.Info("Запуск HTTP сервера бота",
@@ -78,7 +81,7 @@ func startHTTPServer(server *http.Server, port int, appLogger *slog.Logger) {
 			appLogger.Error("Ошибка при запуске HTTP сервера",
 				"error", err,
 			)
-			sigCh <- syscall.SIGTERM
+			close(stopCh)
 		}
 	}()
 }
@@ -129,6 +132,8 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	startHTTPServer(httpServer, cfg.BotServerPort, appLogger)
-	gracefulShutdown(httpServer, poller, appLogger)
+	stopCh := make(chan struct{})
+
+	startHTTPServer(httpServer, cfg.BotServerPort, stopCh, appLogger)
+	gracefulShutdown(httpServer, poller, stopCh, appLogger)
 }

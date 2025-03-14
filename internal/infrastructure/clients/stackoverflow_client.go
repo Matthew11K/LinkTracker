@@ -2,18 +2,18 @@ package clients
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
+
+	"github.com/go-resty/resty/v2"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/clients"
 )
 
 type StackOverflowClient struct {
-	httpClient *http.Client
-	baseURL    string
-	key        string
+	client  *resty.Client
+	baseURL string
+	key     string
 }
 
 func NewStackOverflowClient(key, baseURL string) clients.StackOverflowClient {
@@ -21,10 +21,11 @@ func NewStackOverflowClient(key, baseURL string) clients.StackOverflowClient {
 		baseURL = "https://api.stackexchange.com/2.3"
 	}
 
+	client := resty.New()
+	client.SetTimeout(10 * time.Second)
+
 	return &StackOverflowClient{
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+		client:  client,
 		baseURL: baseURL,
 		key:     key,
 	}
@@ -39,24 +40,14 @@ type Question struct {
 }
 
 func (c *StackOverflowClient) GetQuestionLastUpdate(ctx context.Context, questionID int64) (time.Time, error) {
-	url := fmt.Sprintf("%s/questions/%d?site=stackoverflow", c.baseURL, questionID)
+	url := fmt.Sprintf("%s/questions/%d", c.baseURL, questionID)
+
+	request := c.client.R().
+		SetContext(ctx).
+		SetQueryParam("site", "stackoverflow")
+
 	if c.key != "" {
-		url += "&key=" + c.key
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
-	if err != nil {
-		return time.Time{}, err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return time.Time{}, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return time.Time{}, fmt.Errorf("StackOverflow API вернул статус: %d", resp.StatusCode)
+		request.SetQueryParam("key", c.key)
 	}
 
 	var response struct {
@@ -65,8 +56,16 @@ func (c *StackOverflowClient) GetQuestionLastUpdate(ctx context.Context, questio
 		} `json:"items"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+	resp, err := request.
+		SetResult(&response).
+		Get(url)
+
+	if err != nil {
 		return time.Time{}, err
+	}
+
+	if !resp.IsSuccess() {
+		return time.Time{}, fmt.Errorf("StackOverflow API вернул статус: %d", resp.StatusCode())
 	}
 
 	if len(response.Items) == 0 {

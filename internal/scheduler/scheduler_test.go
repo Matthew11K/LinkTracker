@@ -14,50 +14,50 @@ import (
 )
 
 func TestScheduler_Start(t *testing.T) {
-	mockScrapperService := new(mocks.ScrapperService)
+	mockCheckUpdater := new(mocks.CheckUpdater)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	interval := 100 * time.Millisecond
 	//nolint //тест
-	mockScrapperService.On("CheckUpdates", mock.MatchedBy(func(ctx context.Context) bool {
+	mockCheckUpdater.On("CheckUpdates", mock.MatchedBy(func(ctx context.Context) bool {
 		return true
 	})).Return(nil)
 
-	scheduler := scheduler.NewScheduler(mockScrapperService, interval, logger)
+	scheduler := scheduler.NewScheduler(mockCheckUpdater, interval, logger)
 	scheduler.Start()
 
 	time.Sleep(150 * time.Millisecond)
 	scheduler.Stop()
 
-	mockScrapperService.AssertExpectations(t)
+	mockCheckUpdater.AssertExpectations(t)
 }
 
 func TestScheduler_Stop(t *testing.T) {
-	mockScrapperService := new(mocks.ScrapperService)
+	mockCheckUpdater := new(mocks.CheckUpdater)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	interval := 1 * time.Second
 
-	scheduler := scheduler.NewScheduler(mockScrapperService, interval, logger)
+	scheduler := scheduler.NewScheduler(mockCheckUpdater, interval, logger)
 
 	scheduler.Start()
 	scheduler.Stop()
 
-	mockScrapperService.AssertNotCalled(t, "CheckUpdates", mock.Anything)
+	mockCheckUpdater.AssertNotCalled(t, "CheckUpdates", mock.Anything)
 }
 
 func TestScheduler_CheckUpdatesWithError(t *testing.T) {
-	mockScrapperService := new(mocks.ScrapperService)
+	mockCheckUpdater := new(mocks.CheckUpdater)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	interval := 100 * time.Millisecond
 	//nolint //тест
-	mockScrapperService.On("CheckUpdates", mock.MatchedBy(func(ctx context.Context) bool {
+	mockCheckUpdater.On("CheckUpdates", mock.MatchedBy(func(ctx context.Context) bool {
 		return true
 	})).Return(assert.AnError)
 
-	scheduler := scheduler.NewScheduler(mockScrapperService, interval, logger)
+	scheduler := scheduler.NewScheduler(mockCheckUpdater, interval, logger)
 	scheduler.Start()
 
 	time.Sleep(150 * time.Millisecond)
 	scheduler.Stop()
 
-	mockScrapperService.AssertExpectations(t)
+	mockCheckUpdater.AssertExpectations(t)
 }

@@ -67,3 +67,11 @@ type ErrInvalidArgument struct {
 func (e *ErrInvalidArgument) Error() string {
 	return fmt.Sprintf("некорректный аргумент: %s", e.Message)
 }
+
+type ErrMissingRequiredField struct {
+	FieldName string
+}
+
+func (e *ErrMissingRequiredField) Error() string {
+	return fmt.Sprintf("отсутствует обязательное поле: %s", e.FieldName)
+}

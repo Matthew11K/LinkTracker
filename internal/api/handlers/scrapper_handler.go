@@ -51,7 +51,8 @@ func (h *ScrapperHandler) TgChatIDPost(ctx context.Context, params v1_scrapper.T
 func (h *ScrapperHandler) TgChatIDDelete(ctx context.Context,
 	params v1_scrapper.TgChatIDDeleteParams) (v1_scrapper.TgChatIDDeleteRes, error) {
 	if err := h.scrapperService.DeleteChat(ctx, params.ID); err != nil {
-		if _, ok := err.(*domainerrors.ErrChatNotFound); ok {
+		var chatNotFoundErr *domainerrors.ErrChatNotFound
+		if errors.As(err, &chatNotFoundErr) {
 			errResp := &v1_scrapper.TgChatIDDeleteNotFound{
 				Description: v1_scrapper.NewOptString("Чат не найден"),
 			}
@@ -71,20 +72,20 @@ func (h *ScrapperHandler) TgChatIDDelete(ctx context.Context,
 
 func (h *ScrapperHandler) LinksPost(ctx context.Context, req *v1_scrapper.AddLinkRequest,
 	params v1_scrapper.LinksPostParams) (v1_scrapper.LinksPostRes, error) {
-	var linkURL string
-	if req.Link.IsSet() {
-		linkURL = req.Link.Value.String()
-	} else {
+	if !req.Link.IsSet() {
 		errResp := &v1_scrapper.ApiErrorResponse{
 			Description: v1_scrapper.NewOptString("URL не указан"),
 		}
 
-		return errResp, errors.New("URL не указан")
+		return errResp, &domainerrors.ErrMissingRequiredField{FieldName: "Link"}
 	}
+
+	linkURL := req.Link.Value.String()
 
 	link, err := h.scrapperService.AddLink(ctx, params.TgChatID, linkURL, req.Tags, req.Filters)
 	if err != nil {
-		if _, ok := err.(*domainerrors.ErrUnsupportedLinkType); ok {
+		var unsupportedLinkErr *domainerrors.ErrUnsupportedLinkType
+		if errors.As(err, &unsupportedLinkErr) {
 			errResp := &v1_scrapper.ApiErrorResponse{
 				Description: v1_scrapper.NewOptString("Неподдерживаемый тип ссылки"),
 			}
@@ -92,7 +93,8 @@ func (h *ScrapperHandler) LinksPost(ctx context.Context, req *v1_scrapper.AddLin
 			return errResp, err
 		}
 
-		if _, ok := err.(*domainerrors.ErrLinkAlreadyExists); ok {
+		var linkExistsErr *domainerrors.ErrLinkAlreadyExists
+		if errors.As(err, &linkExistsErr) {
 			errResp := &v1_scrapper.ApiErrorResponse{
 				Description: v1_scrapper.NewOptString("Ссылка уже существует"),
 			}
@@ -122,20 +124,20 @@ func (h *ScrapperHandler) LinksPost(ctx context.Context, req *v1_scrapper.AddLin
 
 func (h *ScrapperHandler) LinksDelete(ctx context.Context, req *v1_scrapper.RemoveLinkRequest,
 	params v1_scrapper.LinksDeleteParams) (v1_scrapper.LinksDeleteRes, error) {
-	var linkURL string
-	if req.Link.IsSet() {
-		linkURL = req.Link.Value.String()
-	} else {
+	if !req.Link.IsSet() {
 		errResp := &v1_scrapper.LinksDeleteBadRequest{
 			Description: v1_scrapper.NewOptString("URL не указан"),
 		}
 
-		return errResp, errors.New("URL не указан")
+		return errResp, &domainerrors.ErrMissingRequiredField{FieldName: "Link"}
 	}
+
+	linkURL := req.Link.Value.String()
 
 	link, err := h.scrapperService.RemoveLink(ctx, params.TgChatID, linkURL)
 	if err != nil {
-		if _, ok := err.(*domainerrors.ErrLinkNotFound); ok {
+		var linkNotFoundErr *domainerrors.ErrLinkNotFound
+		if errors.As(err, &linkNotFoundErr) {
 			errResp := &v1_scrapper.LinksDeleteNotFound{
 				Description: v1_scrapper.NewOptString("Ссылка не найдена"),
 			}

@@ -5,40 +5,28 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
-
 	"github.com/go-co-op/gocron"
 )
 
-type ScrapperService interface {
-	RegisterChat(ctx context.Context, chatID int64) error
-
-	DeleteChat(ctx context.Context, chatID int64) error
-
-	AddLink(ctx context.Context, chatID int64, url string, tags []string, filters []string) (*models.Link, error)
-
-	RemoveLink(ctx context.Context, chatID int64, url string) (*models.Link, error)
-
-	GetLinks(ctx context.Context, chatID int64) ([]*models.Link, error)
-
+type CheckUpdater interface {
 	CheckUpdates(ctx context.Context) error
 }
 
 type Scheduler struct {
-	scheduler       *gocron.Scheduler
-	scrapperService ScrapperService
-	logger          *slog.Logger
-	interval        time.Duration
+	scheduler    *gocron.Scheduler
+	checkUpdater CheckUpdater
+	logger       *slog.Logger
+	interval     time.Duration
 }
 
-func NewScheduler(scrapperService ScrapperService, interval time.Duration, logger *slog.Logger) *Scheduler {
+func NewScheduler(checkUpdater CheckUpdater, interval time.Duration, logger *slog.Logger) *Scheduler {
 	scheduler := gocron.NewScheduler(time.UTC)
 
 	return &Scheduler{
-		scheduler:       scheduler,
-		scrapperService: scrapperService,
-		logger:          logger,
-		interval:        interval,
+		scheduler:    scheduler,
+		checkUpdater: checkUpdater,
+		logger:       logger,
+		interval:     interval,
 	}
 }
 
@@ -51,7 +39,7 @@ func (s *Scheduler) Start() {
 		s.logger.Info("Запуск проверки обновлений")
 
 		ctx := context.Background()
-		if err := s.scrapperService.CheckUpdates(ctx); err != nil {
+		if err := s.checkUpdater.CheckUpdates(ctx); err != nil {
 			s.logger.Error("Ошибка при проверке обновлений",
 				"error", err,
 			)

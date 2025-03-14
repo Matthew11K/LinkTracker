@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/application/services"
-	clientMocks "github.com/central-university-dev/go-Matthew11K/internal/domain/clients/mocks"
+	"github.com/central-university-dev/go-Matthew11K/internal/domain/clients/mocks"
 	domainErrors "github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 	repoMocks "github.com/central-university-dev/go-Matthew11K/internal/domain/repositories/mocks"
@@ -26,8 +26,7 @@ type MockBotClient struct {
 }
 
 func (m *MockBotClient) SendUpdate(ctx context.Context, update *models.LinkUpdate) error {
-	args := m.Called(ctx, update)
-	return args.Error(0)
+	return m.Called(ctx, update).Error(0)
 }
 
 func TestScrapperService_AddLink(t *testing.T) {
@@ -41,16 +40,17 @@ func TestScrapperService_AddLink(t *testing.T) {
 	mockLinkRepo := repoMocks.NewLinkRepository(t)
 	mockChatRepo := repoMocks.NewChatRepository(t)
 	mockBotClient := new(MockBotClient)
-	mockGithubClient := clientMocks.NewGitHubClient(t)
-	mockStackOverflowClient := clientMocks.NewStackOverflowClient(t)
+	mockGithubClient := mocks.NewGitHubClient(t)
+	mockStackOverflowClient := mocks.NewStackOverflowClient(t)
 	linkAnalyzer := domainServices.NewLinkAnalyzer()
+
+	updaterFactory := domainServices.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
 
 	mockChat := &models.Chat{
 		ID:        chatID,
 		Links:     []int64{},
 		CreatedAt: time.Now(),
 	}
-
 	mockChatRepo.On("FindByID", ctx, chatID).Return(mockChat, nil)
 
 	notFoundErr := &domainErrors.ErrLinkNotFound{URL: url}
@@ -72,8 +72,7 @@ func TestScrapperService_AddLink(t *testing.T) {
 		mockLinkRepo,
 		mockChatRepo,
 		mockBotClient,
-		mockGithubClient,
-		mockStackOverflowClient,
+		updaterFactory,
 		linkAnalyzer,
 		logger,
 	)
@@ -103,9 +102,11 @@ func TestScrapperService_AddDuplicateLink(t *testing.T) {
 	mockLinkRepo := repoMocks.NewLinkRepository(t)
 	mockChatRepo := repoMocks.NewChatRepository(t)
 	mockBotClient := new(MockBotClient)
-	mockGithubClient := clientMocks.NewGitHubClient(t)
-	mockStackOverflowClient := clientMocks.NewStackOverflowClient(t)
+	mockGithubClient := mocks.NewGitHubClient(t)
+	mockStackOverflowClient := mocks.NewStackOverflowClient(t)
 	linkAnalyzer := domainServices.NewLinkAnalyzer()
+
+	updaterFactory := domainServices.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
 
 	existingLink := &models.Link{
 		ID:        existingLinkID,
@@ -129,8 +130,7 @@ func TestScrapperService_AddDuplicateLink(t *testing.T) {
 		mockLinkRepo,
 		mockChatRepo,
 		mockBotClient,
-		mockGithubClient,
-		mockStackOverflowClient,
+		updaterFactory,
 		linkAnalyzer,
 		logger,
 	)
@@ -155,9 +155,11 @@ func TestScrapperService_CheckUpdates_GitHubError(t *testing.T) {
 	mockLinkRepo := repoMocks.NewLinkRepository(t)
 	mockChatRepo := repoMocks.NewChatRepository(t)
 	mockBotClient := new(MockBotClient)
-	mockGithubClient := clientMocks.NewGitHubClient(t)
-	mockStackOverflowClient := clientMocks.NewStackOverflowClient(t)
+	mockGithubClient := mocks.NewGitHubClient(t)
+	mockStackOverflowClient := mocks.NewStackOverflowClient(t)
 	linkAnalyzer := domainServices.NewLinkAnalyzer()
+
+	updaterFactory := domainServices.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
 
 	githubLink := &models.Link{
 		ID:        1,
@@ -178,8 +180,7 @@ func TestScrapperService_CheckUpdates_GitHubError(t *testing.T) {
 		mockLinkRepo,
 		mockChatRepo,
 		mockBotClient,
-		mockGithubClient,
-		mockStackOverflowClient,
+		updaterFactory,
 		linkAnalyzer,
 		logger,
 	)
@@ -199,9 +200,11 @@ func TestScrapperService_CheckUpdates_StackOverflowError(t *testing.T) {
 	mockLinkRepo := repoMocks.NewLinkRepository(t)
 	mockChatRepo := repoMocks.NewChatRepository(t)
 	mockBotClient := new(MockBotClient)
-	mockGithubClient := clientMocks.NewGitHubClient(t)
-	mockStackOverflowClient := clientMocks.NewStackOverflowClient(t)
+	mockGithubClient := mocks.NewGitHubClient(t)
+	mockStackOverflowClient := mocks.NewStackOverflowClient(t)
 	linkAnalyzer := domainServices.NewLinkAnalyzer()
+
+	updaterFactory := domainServices.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
 
 	stackOverflowLink := &models.Link{
 		ID:        1,
@@ -222,8 +225,7 @@ func TestScrapperService_CheckUpdates_StackOverflowError(t *testing.T) {
 		mockLinkRepo,
 		mockChatRepo,
 		mockBotClient,
-		mockGithubClient,
-		mockStackOverflowClient,
+		updaterFactory,
 		linkAnalyzer,
 		logger,
 	)
@@ -243,9 +245,11 @@ func TestScrapperService_CheckUpdates_SendUpdateToSubscribedUsers(t *testing.T) 
 	mockLinkRepo := repoMocks.NewLinkRepository(t)
 	mockChatRepo := repoMocks.NewChatRepository(t)
 	mockBotClient := new(MockBotClient)
-	mockGithubClient := clientMocks.NewGitHubClient(t)
-	mockStackOverflowClient := clientMocks.NewStackOverflowClient(t)
+	mockGithubClient := mocks.NewGitHubClient(t)
+	mockStackOverflowClient := mocks.NewStackOverflowClient(t)
 	linkAnalyzer := domainServices.NewLinkAnalyzer()
+
+	updaterFactory := domainServices.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
 
 	chatID1 := int64(123)
 	chatID2 := int64(456)
@@ -296,8 +300,7 @@ func TestScrapperService_CheckUpdates_SendUpdateToSubscribedUsers(t *testing.T) 
 		mockLinkRepo,
 		mockChatRepo,
 		mockBotClient,
-		mockGithubClient,
-		mockStackOverflowClient,
+		updaterFactory,
 		linkAnalyzer,
 		logger,
 	)
@@ -307,9 +310,9 @@ func TestScrapperService_CheckUpdates_SendUpdateToSubscribedUsers(t *testing.T) 
 	require.NoError(t, err)
 
 	mockLinkRepo.AssertExpectations(t)
-	mockChatRepo.AssertExpectations(t)
 	mockGithubClient.AssertExpectations(t)
 	mockBotClient.AssertExpectations(t)
+	mockChatRepo.AssertExpectations(t)
 }
 
 func TestScrapperService_GitHub_HTTP_Errors(t *testing.T) {
@@ -319,9 +322,11 @@ func TestScrapperService_GitHub_HTTP_Errors(t *testing.T) {
 	mockLinkRepo := repoMocks.NewLinkRepository(t)
 	mockChatRepo := repoMocks.NewChatRepository(t)
 	mockBotClient := new(MockBotClient)
-	mockGithubClient := clientMocks.NewGitHubClient(t)
-	mockStackOverflowClient := clientMocks.NewStackOverflowClient(t)
+	mockGithubClient := mocks.NewGitHubClient(t)
+	mockStackOverflowClient := mocks.NewStackOverflowClient(t)
 	linkAnalyzer := domainServices.NewLinkAnalyzer()
+
+	updaterFactory := domainServices.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
 
 	githubLink := &models.Link{
 		ID:        1,
@@ -356,8 +361,7 @@ func TestScrapperService_GitHub_HTTP_Errors(t *testing.T) {
 				mockLinkRepo,
 				mockChatRepo,
 				mockBotClient,
-				mockGithubClient,
-				mockStackOverflowClient,
+				updaterFactory,
 				linkAnalyzer,
 				logger,
 			)
@@ -379,9 +383,11 @@ func TestScrapperService_StackOverflow_HTTP_Errors(t *testing.T) {
 	mockLinkRepo := repoMocks.NewLinkRepository(t)
 	mockChatRepo := repoMocks.NewChatRepository(t)
 	mockBotClient := new(MockBotClient)
-	mockGithubClient := clientMocks.NewGitHubClient(t)
-	mockStackOverflowClient := clientMocks.NewStackOverflowClient(t)
+	mockGithubClient := mocks.NewGitHubClient(t)
+	mockStackOverflowClient := mocks.NewStackOverflowClient(t)
 	linkAnalyzer := domainServices.NewLinkAnalyzer()
+
+	updaterFactory := domainServices.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
 
 	stackOverflowLink := &models.Link{
 		ID:        1,
@@ -416,8 +422,7 @@ func TestScrapperService_StackOverflow_HTTP_Errors(t *testing.T) {
 				mockLinkRepo,
 				mockChatRepo,
 				mockBotClient,
-				mockGithubClient,
-				mockStackOverflowClient,
+				updaterFactory,
 				linkAnalyzer,
 				logger,
 			)
@@ -439,9 +444,11 @@ func TestScrapperService_GitHub_InvalidJSON(t *testing.T) {
 	mockLinkRepo := repoMocks.NewLinkRepository(t)
 	mockChatRepo := repoMocks.NewChatRepository(t)
 	mockBotClient := new(MockBotClient)
-	mockGithubClient := clientMocks.NewGitHubClient(t)
-	mockStackOverflowClient := clientMocks.NewStackOverflowClient(t)
+	mockGithubClient := mocks.NewGitHubClient(t)
+	mockStackOverflowClient := mocks.NewStackOverflowClient(t)
 	linkAnalyzer := domainServices.NewLinkAnalyzer()
+
+	updaterFactory := domainServices.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
 
 	githubLink := &models.Link{
 		ID:        1,
@@ -461,8 +468,7 @@ func TestScrapperService_GitHub_InvalidJSON(t *testing.T) {
 		mockLinkRepo,
 		mockChatRepo,
 		mockBotClient,
-		mockGithubClient,
-		mockStackOverflowClient,
+		updaterFactory,
 		linkAnalyzer,
 		logger,
 	)
@@ -482,9 +488,11 @@ func TestScrapperService_StackOverflow_InvalidJSON(t *testing.T) {
 	mockLinkRepo := repoMocks.NewLinkRepository(t)
 	mockChatRepo := repoMocks.NewChatRepository(t)
 	mockBotClient := new(MockBotClient)
-	mockGithubClient := clientMocks.NewGitHubClient(t)
-	mockStackOverflowClient := clientMocks.NewStackOverflowClient(t)
+	mockGithubClient := mocks.NewGitHubClient(t)
+	mockStackOverflowClient := mocks.NewStackOverflowClient(t)
 	linkAnalyzer := domainServices.NewLinkAnalyzer()
+
+	updaterFactory := domainServices.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
 
 	stackOverflowLink := &models.Link{
 		ID:        1,
@@ -504,8 +512,7 @@ func TestScrapperService_StackOverflow_InvalidJSON(t *testing.T) {
 		mockLinkRepo,
 		mockChatRepo,
 		mockBotClient,
-		mockGithubClient,
-		mockStackOverflowClient,
+		updaterFactory,
 		linkAnalyzer,
 		logger,
 	)

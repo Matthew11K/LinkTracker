@@ -63,7 +63,7 @@ func (c *ScrapperClient) DeleteChat(ctx context.Context, chatID int64) error {
 	case *v1_scrapper.TgChatIDDeleteNotFound:
 		return &errors.ErrChatNotFound{ChatID: chatID}
 	default:
-		return &errors.ErrInternalServer{Message: "неожиданный ответ от сервера"}
+		return &errors.ErrInternalServer{Message: fmt.Sprintf("неожиданный ответ от сервера: %T", resp)}
 	}
 }
 

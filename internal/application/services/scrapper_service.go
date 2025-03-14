@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/central-university-dev/go-Matthew11K/internal/domain/clients"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/repositories"
@@ -17,32 +16,29 @@ type BotClient interface {
 }
 
 type ScrapperService struct {
-	linkRepo            repositories.LinkRepository
-	chatRepo            repositories.ChatRepository
-	botClient           BotClient
-	githubClient        clients.GitHubClient
-	stackoverflowClient clients.StackOverflowClient
-	linkAnalyzer        *services.LinkAnalyzer
-	logger              *slog.Logger
+	linkRepo       repositories.LinkRepository
+	chatRepo       repositories.ChatRepository
+	botClient      BotClient
+	linkAnalyzer   *services.LinkAnalyzer
+	updaterFactory *services.LinkUpdaterFactory
+	logger         *slog.Logger
 }
 
 func NewScrapperService(
 	linkRepo repositories.LinkRepository,
 	chatRepo repositories.ChatRepository,
 	botClient BotClient,
-	githubClient clients.GitHubClient,
-	stackoverflowClient clients.StackOverflowClient,
+	updaterFactory *services.LinkUpdaterFactory,
 	linkAnalyzer *services.LinkAnalyzer,
 	logger *slog.Logger,
 ) *ScrapperService {
 	return &ScrapperService{
-		linkRepo:            linkRepo,
-		chatRepo:            chatRepo,
-		botClient:           botClient,
-		githubClient:        githubClient,
-		stackoverflowClient: stackoverflowClient,
-		linkAnalyzer:        linkAnalyzer,
-		logger:              logger,
+		linkRepo:       linkRepo,
+		chatRepo:       chatRepo,
+		botClient:      botClient,
+		linkAnalyzer:   linkAnalyzer,
+		updaterFactory: updaterFactory,
+		logger:         logger,
 	}
 }
 
@@ -243,56 +239,32 @@ func (s *ScrapperService) CheckUpdates(ctx context.Context) error {
 	return nil
 }
 
-//nolint:funlen // Функция логически целостная и не требует разбиения на более мелкие части
 func (s *ScrapperService) checkLinkUpdate(ctx context.Context, link *models.Link) (bool, error) {
-	var lastUpdate time.Time
-
-	switch link.Type {
-	case models.GitHub:
-		owner, repo, parseErr := services.ParseGitHubURL(link.URL)
-		if parseErr != nil {
-			return false, parseErr
-		}
-
-		s.logger.Info("Проверка обновлений для GitHub репозитория",
-			"owner", owner,
-			"repo", repo,
-		)
-
-		var apiErr error
-
-		lastUpdate, apiErr = s.githubClient.GetRepositoryLastUpdate(ctx, owner, repo)
-		if apiErr != nil {
-			s.logger.Error("Ошибка при запросе к GitHub API",
-				"error", apiErr,
-			)
-
-			return false, apiErr
-		}
-
-		s.logger.Info("Время последнего обновления репозитория",
-			"owner", owner,
-			"repo", repo,
-			"lastUpdate", lastUpdate,
-			"savedLastUpdate", link.LastUpdated,
-		)
-	case models.StackOverflow:
-		questionID, parseErr := services.ParseStackOverflowURL(link.URL)
-		if parseErr != nil {
-			return false, parseErr
-		}
-
-		var apiErr error
-
-		lastUpdate, apiErr = s.stackoverflowClient.GetQuestionLastUpdate(ctx, questionID)
-		if apiErr != nil {
-			return false, apiErr
-		}
-	case models.Unknown:
-		return false, &errors.ErrUnsupportedLinkType{URL: link.URL}
-	default:
-		return false, &errors.ErrUnsupportedLinkType{URL: link.URL}
+	updater, err := s.updaterFactory.CreateUpdater(link.Type)
+	if err != nil {
+		return false, err
 	}
+
+	s.logger.Info("Проверка обновлений для ссылки",
+		"url", link.URL,
+		"type", link.Type,
+	)
+
+	lastUpdate, err := updater.GetLastUpdate(ctx, link.URL)
+	if err != nil {
+		s.logger.Error("Ошибка при запросе обновлений",
+			"url", link.URL,
+			"error", err,
+		)
+
+		return false, err
+	}
+
+	s.logger.Info("Время последнего обновления ресурса",
+		"url", link.URL,
+		"lastUpdate", lastUpdate,
+		"savedLastUpdate", link.LastUpdated,
+	)
 
 	link.LastChecked = time.Now()
 
