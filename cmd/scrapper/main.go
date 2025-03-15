@@ -9,16 +9,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/central-university-dev/go-Matthew11K/internal/common"
+	clients2 "github.com/central-university-dev/go-Matthew11K/internal/scrapper/clients"
+	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/repository"
+	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/scheduler"
+
 	"log/slog"
 
-	"github.com/central-university-dev/go-Matthew11K/internal/api/handlers"
 	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1/v1_scrapper"
-	appservices "github.com/central-university-dev/go-Matthew11K/internal/application/services"
 	"github.com/central-university-dev/go-Matthew11K/internal/config"
-	domainservices "github.com/central-university-dev/go-Matthew11K/internal/domain/services"
-	"github.com/central-university-dev/go-Matthew11K/internal/infrastructure/clients"
-	"github.com/central-university-dev/go-Matthew11K/internal/infrastructure/repositories/memory"
-	"github.com/central-university-dev/go-Matthew11K/internal/scheduler"
+	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/handler"
+	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/service"
 	"github.com/central-university-dev/go-Matthew11K/pkg"
 )
 
@@ -71,10 +72,10 @@ func main() {
 
 	cfg := config.LoadConfig()
 
-	linkRepo := memory.NewLinkRepository()
-	chatRepo := memory.NewChatRepository()
+	linkRepo := repository.NewLinkRepository()
+	chatRepo := repository.NewChatRepository()
 
-	botClient, err := clients.NewBotAPIClient(cfg.BotBaseURL)
+	botClient, err := clients2.NewBotAPIClient(cfg.BotBaseURL)
 	if err != nil {
 		appLogger.Error("Ошибка при создании клиента бота",
 			"error", err,
@@ -82,13 +83,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	githubClient := clients.NewGitHubClient(cfg.GitHubAPIToken, "")
-	stackoverflowClient := clients.NewStackOverflowClient(cfg.StackOverflowAPIToken, "")
-	linkAnalyzer := domainservices.NewLinkAnalyzer()
+	githubClient := clients2.NewGitHubClient(cfg.GitHubAPIToken, "")
+	stackoverflowClient := clients2.NewStackOverflowClient(cfg.StackOverflowAPIToken, "")
+	linkAnalyzer := common.NewLinkAnalyzer()
 
-	updaterFactory := domainservices.NewLinkUpdaterFactory(githubClient, stackoverflowClient)
+	updaterFactory := common.NewLinkUpdaterFactory(githubClient, stackoverflowClient)
 
-	scrapperService := appservices.NewScrapperService(
+	scrapperService := service.NewScrapperService(
 		linkRepo,
 		chatRepo,
 		botClient,
@@ -97,7 +98,7 @@ func main() {
 		appLogger,
 	)
 
-	scrapperHandler := handlers.NewScrapperHandler(scrapperService)
+	scrapperHandler := handler.NewScrapperHandler(scrapperService)
 
 	server, err := v1_scrapper.NewServer(scrapperHandler)
 	if err != nil {

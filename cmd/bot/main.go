@@ -11,15 +11,15 @@ import (
 
 	"log/slog"
 
-	"github.com/central-university-dev/go-Matthew11K/internal/api/handlers"
 	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1/v1_bot"
-	"github.com/central-university-dev/go-Matthew11K/internal/application/services"
+	"github.com/central-university-dev/go-Matthew11K/internal/bot/clients"
+	"github.com/central-university-dev/go-Matthew11K/internal/bot/domain"
+	bothandler "github.com/central-university-dev/go-Matthew11K/internal/bot/handler"
+	"github.com/central-university-dev/go-Matthew11K/internal/bot/repository"
+	botservice "github.com/central-university-dev/go-Matthew11K/internal/bot/service"
+	"github.com/central-university-dev/go-Matthew11K/internal/bot/telegram"
+	commonservice "github.com/central-university-dev/go-Matthew11K/internal/common"
 	"github.com/central-university-dev/go-Matthew11K/internal/config"
-	"github.com/central-university-dev/go-Matthew11K/internal/domain/clients"
-	domainservices "github.com/central-university-dev/go-Matthew11K/internal/domain/services"
-	infraclients "github.com/central-university-dev/go-Matthew11K/internal/infrastructure/clients"
-	"github.com/central-university-dev/go-Matthew11K/internal/infrastructure/repositories/memory"
-	"github.com/central-university-dev/go-Matthew11K/internal/telegram"
 	"github.com/central-university-dev/go-Matthew11K/pkg"
 )
 
@@ -41,8 +41,8 @@ func gracefulShutdown(server *http.Server, poller *telegram.Poller, stopCh <-cha
 	appLogger.Info("Сервер успешно остановлен")
 }
 
-func setupTelegramCommands(telegramClient clients.TelegramClient, appLogger *slog.Logger) {
-	botCommands := []clients.BotCommand{
+func setupTelegramCommands(telegramClient domain.TelegramClientAPI, appLogger *slog.Logger) {
+	botCommands := []domain.BotCommand{
 		{Command: "start", Description: "Начать работу с ботом"},
 		{Command: "help", Description: "Получить справку о командах"},
 		{Command: "track", Description: "Отслеживать ссылку"},
@@ -91,9 +91,9 @@ func main() {
 
 	cfg := config.LoadConfig()
 
-	chatStateRepo := memory.NewChatStateRepository()
+	chatStateRepo := repository.NewChatStateRepository()
 
-	scrapperClient, err := infraclients.NewScrapperClient(cfg.ScrapperBaseURL)
+	scrapperClient, err := clients.NewScrapperClient(cfg.ScrapperBaseURL)
 	if err != nil {
 		appLogger.Error("Ошибка при создании клиента скраппера",
 			"error", err,
@@ -101,19 +101,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	telegramClient := infraclients.NewTelegramClient(cfg.TelegramBotToken, appLogger)
+	telegramClient := clients.NewTelegramClient(cfg.TelegramBotToken, appLogger)
 	setupTelegramCommands(telegramClient, appLogger)
 
-	linkAnalyzer := domainservices.NewLinkAnalyzer()
+	linkAnalyzer := commonservice.NewLinkAnalyzer()
 
-	botService := services.NewBotService(
+	botService := botservice.NewBotService(
 		chatStateRepo,
 		scrapperClient,
 		telegramClient,
 		linkAnalyzer,
 	)
 
-	botHandler := handlers.NewBotHandler(botService)
+	botHandler := bothandler.NewBotHandler(botService)
 
 	server, err := v1_bot.NewServer(botHandler)
 	if err != nil {
