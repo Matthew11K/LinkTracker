@@ -67,6 +67,7 @@ func NewLinkUpdaterFactory(
 }
 
 func (f *LinkUpdaterFactory) CreateUpdater(linkType models.LinkType) (LinkUpdater, error) {
+	//nolint:exhaustive // обработка models.Unknown находится в блоке default
 	switch linkType {
 	case models.GitHub:
 		return f.githubUpdater, nil

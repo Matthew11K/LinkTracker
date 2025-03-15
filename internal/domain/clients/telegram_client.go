@@ -2,6 +2,8 @@ package clients
 
 import (
 	"context"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 type TelegramClient interface {
@@ -12,6 +14,8 @@ type TelegramClient interface {
 	SendUpdate(ctx context.Context, update interface{}) error
 
 	SetMyCommands(ctx context.Context, commands []BotCommand) error
+
+	GetBot() *tgbotapi.BotAPI
 }
 
 type BotCommand struct {

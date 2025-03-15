@@ -47,6 +47,7 @@ func NewBotService(
 }
 
 func (s *BotService) ProcessCommand(ctx context.Context, command *models.Command) (string, error) {
+	//nolint:exhaustive // CommandUnknown обрабатывается в блоке default
 	switch command.Type {
 	case models.CommandStart:
 		return s.handleStartCommand(ctx, command)
@@ -58,14 +59,13 @@ func (s *BotService) ProcessCommand(ctx context.Context, command *models.Command
 		return s.handleUntrackCommand(ctx, command)
 	case models.CommandList:
 		return s.handleListCommand(ctx, command)
-	case models.CommandUnknown:
-		return "Неизвестная команда. Введите /help для просмотра доступных команд.", &domainerrors.ErrUnknownCommand{Command: string(command.Type)}
 	default:
-		return "Неизвестная команда. Введите /help для просмотра доступных команд.", &domainerrors.ErrUnknownCommand{Command: string(command.Type)}
+		return "Неизвестная команда. Введите /help для просмотра доступных команд.",
+			&domainerrors.ErrUnknownCommand{Command: string(command.Type)}
 	}
 }
 
-func (s *BotService) ProcessMessage(ctx context.Context, chatID, userID int64, text, username string) (string, error) {
+func (s *BotService) ProcessMessage(ctx context.Context, chatID, _ int64, text, _ string) (string, error) {
 	state, err := s.chatStateRepo.GetState(ctx, chatID)
 	if err != nil {
 		return "", err
@@ -73,19 +73,6 @@ func (s *BotService) ProcessMessage(ctx context.Context, chatID, userID int64, t
 
 	switch state {
 	case models.StateIdle:
-		if strings.HasPrefix(text, "/") {
-			command := &models.Command{
-				ChatID:   chatID,
-				UserID:   userID,
-				Text:     text,
-				Username: username,
-			}
-
-			command.Type = getCommandType(text)
-
-			return s.ProcessCommand(ctx, command)
-		}
-
 		return "Введите команду или /help для просмотра доступных команд.", nil
 	case models.StateAwaitingLink:
 		return s.handleLinkInput(ctx, chatID, text)
@@ -101,14 +88,7 @@ func (s *BotService) ProcessMessage(ctx context.Context, chatID, userID int64, t
 }
 
 func (s *BotService) SendLinkUpdate(ctx context.Context, update *models.LinkUpdate) error {
-	for _, chatID := range update.TgChatIDs {
-		message := fmt.Sprintf("🔔 *Обновление ссылки*\n\n🔗 [%s](%s)\n\n📝 %s", update.URL, update.URL, update.Description)
-		if err := s.telegramClient.SendMessage(ctx, chatID, message); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return s.telegramClient.SendUpdate(ctx, update)
 }
 
 func (s *BotService) handleStartCommand(ctx context.Context, command *models.Command) (string, error) {
@@ -284,22 +264,4 @@ func (s *BotService) handleUntrackLinkInput(ctx context.Context, chatID int64, t
 	}
 
 	return fmt.Sprintf("Прекращено отслеживание ссылки %s.", text), nil
-}
-
-func getCommandType(text string) models.CommandType {
-	command := strings.Split(text, " ")[0]
-	switch command {
-	case "/start":
-		return models.CommandStart
-	case "/help":
-		return models.CommandHelp
-	case "/track":
-		return models.CommandTrack
-	case "/untrack":
-		return models.CommandUntrack
-	case "/list":
-		return models.CommandList
-	default:
-		return models.CommandUnknown
-	}
 }

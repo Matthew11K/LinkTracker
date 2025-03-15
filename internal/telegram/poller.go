@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/clients"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 )
@@ -22,8 +24,9 @@ type Poller struct {
 	telegramClient clients.TelegramClient
 	botService     BotService
 	logger         *slog.Logger
-	offset         int
 	stopped        bool
+	updatesChan    tgbotapi.UpdatesChannel
+	stopChan       chan struct{}
 }
 
 func NewPoller(telegramClient clients.TelegramClient, botService BotService, logger *slog.Logger) *Poller {
@@ -31,43 +34,47 @@ func NewPoller(telegramClient clients.TelegramClient, botService BotService, log
 		telegramClient: telegramClient,
 		botService:     botService,
 		logger:         logger,
-		offset:         0,
-		stopped:        false,
+		stopped:        true,
+		stopChan:       make(chan struct{}),
 	}
 }
 
 func (p *Poller) Start() {
 	p.logger.Info("Запуск Telegram поллера")
+
+	bot := p.telegramClient.GetBot()
+	if bot == nil {
+		p.logger.Error("Не удалось получить доступ к API бота")
+		return
+	}
+
 	p.stopped = false
 
-	for !p.stopped {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		updates, err := p.telegramClient.GetUpdates(ctx, p.offset)
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
 
-		cancel()
+	p.updatesChan = bot.GetUpdatesChan(u)
 
-		if err != nil {
-			p.logger.Error("Ошибка при получении обновлений", "error", err)
-			time.Sleep(5 * time.Second)
-
-			continue
+	go func() {
+		for {
+			select {
+			case <-p.stopChan:
+				p.logger.Info("Получен сигнал остановки поллера")
+				return
+			case update := <-p.updatesChan:
+				p.processUpdate(&update)
+			}
 		}
-
-		for _, update := range updates {
-			p.processUpdate(update)
-			p.offset = int(update.UpdateID) + 1
-		}
-
-		time.Sleep(1 * time.Second)
-	}
+	}()
 }
 
 func (p *Poller) Stop() {
 	p.logger.Info("Остановка Telegram поллера")
 	p.stopped = true
+	close(p.stopChan)
 }
 
-func (p *Poller) processUpdate(update clients.Update) {
+func (p *Poller) processUpdate(update *tgbotapi.Update) {
 	if update.Message == nil {
 		return
 	}
@@ -75,7 +82,7 @@ func (p *Poller) processUpdate(update clients.Update) {
 	chatID := update.Message.Chat.ID
 	userID := update.Message.From.ID
 	text := update.Message.Text
-	username := update.Message.From.Username
+	username := update.Message.From.UserName
 
 	p.logger.Info("Получено сообщение",
 		"chat_id", chatID,
@@ -92,14 +99,23 @@ func (p *Poller) processUpdate(update clients.Update) {
 	var err error
 
 	if strings.HasPrefix(text, "/") {
+		commandName := text
+
+		if i := strings.Index(text, " "); i != -1 {
+			commandName = text[:i]
+		}
+
+		if i := strings.Index(commandName, "@"); i != -1 {
+			commandName = commandName[:i]
+		}
+
 		command := &models.Command{
 			ChatID:   chatID,
 			UserID:   userID,
 			Text:     text,
 			Username: username,
+			Type:     getCommandType(commandName),
 		}
-
-		command.Type = getCommandType(text)
 
 		response, err = p.botService.ProcessCommand(ctx, command)
 	} else {
@@ -130,9 +146,8 @@ func (p *Poller) processUpdate(update clients.Update) {
 	}
 }
 
-func getCommandType(text string) models.CommandType {
-	command := strings.Split(text, " ")[0]
-	switch command {
+func getCommandType(commandName string) models.CommandType {
+	switch commandName {
 	case "/start":
 		return models.CommandStart
 	case "/help":

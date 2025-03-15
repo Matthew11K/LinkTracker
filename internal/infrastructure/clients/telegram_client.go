@@ -2,53 +2,44 @@ package clients
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"regexp"
-	"strings"
-	"time"
+	"log/slog"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/clients"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 )
 
 type TelegramClient struct {
-	httpClient *http.Client
-	token      string
-	baseURL    string
+	bot    *tgbotapi.BotAPI
+	logger *slog.Logger
 }
 
-func NewTelegramClient(token string) clients.TelegramClient {
+func NewTelegramClient(token string, logger *slog.Logger) clients.TelegramClient {
+	bot, err := tgbotapi.NewBotAPI(token)
+	if err != nil {
+		logger.Error("Ошибка при создании Telegram клиента", "error", err)
+	}
+
 	return &TelegramClient{
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-		token:   token,
-		baseURL: fmt.Sprintf("https://api.telegram.org/bot%s", token),
+		bot:    bot,
+		logger: logger,
 	}
 }
 
 // SetBaseURL устанавливает базовый URL для API Telegram (используется в тестах).
 func (c *TelegramClient) SetBaseURL(url string) {
-	c.baseURL = url
+	if c.bot != nil {
+		c.bot.SetAPIEndpoint(url)
+	}
 }
 
-func (c *TelegramClient) sanitizeError(err error) error {
-	if err == nil {
-		return nil
+func (c *TelegramClient) SendUpdate(_ context.Context, update interface{}) error {
+	if c.bot == nil {
+		return fmt.Errorf("telegram клиент не инициализирован")
 	}
 
-	errorMsg := err.Error()
-
-	re := regexp.MustCompile(`https://api\.telegram\.org/bot([^/\s]+)`)
-
-	sanitized := re.ReplaceAllString(errorMsg, "https://api.telegram.org/bot[MASKED_TOKEN]")
-
-	return fmt.Errorf("%s", sanitized)
-}
-
-func (c *TelegramClient) SendUpdate(ctx context.Context, update interface{}) error {
 	linkUpdate, ok := update.(*models.LinkUpdate)
 	if !ok {
 		return fmt.Errorf("неправильный тип данных для обновления")
@@ -56,160 +47,100 @@ func (c *TelegramClient) SendUpdate(ctx context.Context, update interface{}) err
 
 	for _, chatID := range linkUpdate.TgChatIDs {
 		message := fmt.Sprintf("🔔 *Обновление ссылки*\n\n🔗 [%s](%s)\n\n📝 %s", linkUpdate.URL, linkUpdate.URL, linkUpdate.Description)
-		if err := c.SendMessage(ctx, chatID, message); err != nil {
-			return err
+
+		msg := tgbotapi.NewMessage(chatID, message)
+		msg.ParseMode = tgbotapi.ModeMarkdown
+
+		_, err := c.bot.Send(msg)
+		if err != nil {
+			return fmt.Errorf("ошибка при отправке обновления: %w", err)
 		}
 	}
 
 	return nil
 }
 
-func (c *TelegramClient) SendMessage(ctx context.Context, chatID int64, text string) error {
-	url := fmt.Sprintf("%s/sendMessage", c.baseURL)
-
-	data := map[string]interface{}{
-		"chat_id":    chatID,
-		"text":       text,
-		"parse_mode": "HTML",
+func (c *TelegramClient) SendMessage(_ context.Context, chatID int64, text string) error {
+	if c.bot == nil {
+		return fmt.Errorf("telegram клиент не инициализирован")
 	}
 
-	jsonData, err := json.Marshal(data)
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ParseMode = tgbotapi.ModeHTML
+
+	_, err := c.bot.Send(msg)
 	if err != nil {
-		return c.sanitizeError(err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(jsonData)))
-	if err != nil {
-		return c.sanitizeError(err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return c.sanitizeError(err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var errorResponse struct {
-			Description string `json:"description"`
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&errorResponse); err != nil {
-			return fmt.Errorf("ошибка при отправке сообщения: статус %d", resp.StatusCode)
-		}
-
-		return fmt.Errorf("ошибка при отправке сообщения: %s", errorResponse.Description)
+		return fmt.Errorf("ошибка при отправке сообщения: %w", err)
 	}
 
 	return nil
 }
 
-func (c *TelegramClient) GetUpdates(ctx context.Context, offset int) ([]clients.Update, error) {
-	url := fmt.Sprintf("%s/getUpdates", c.baseURL)
-
-	data := map[string]interface{}{
-		"offset":  offset,
-		"timeout": 30,
+func (c *TelegramClient) GetUpdates(_ context.Context, offset int) ([]clients.Update, error) {
+	if c.bot == nil {
+		return nil, fmt.Errorf("telegram клиент не инициализирован")
 	}
 
-	jsonData, err := json.Marshal(data)
+	updateConfig := tgbotapi.NewUpdate(offset)
+	updateConfig.Timeout = 30
+
+	updates, err := c.bot.GetUpdates(updateConfig)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ошибка при получении обновлений: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(jsonData)))
-	if err != nil {
-		return nil, c.sanitizeError(err)
-	}
+	domainUpdates := make([]clients.Update, 0, len(updates))
 
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, c.sanitizeError(err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var errorResponse struct {
-			Description string `json:"description"`
+	for _, update := range updates {
+		var domainMessage *clients.Message
+		if update.Message != nil {
+			domainMessage = &clients.Message{
+				MessageID: int64(update.Message.MessageID),
+				Text:      update.Message.Text,
+				Chat: clients.Chat{
+					ID: update.Message.Chat.ID,
+				},
+				From: clients.User{
+					ID:        update.Message.From.ID,
+					Username:  update.Message.From.UserName,
+					FirstName: update.Message.From.FirstName,
+					LastName:  update.Message.From.LastName,
+				},
+			}
 		}
 
-		if err := json.NewDecoder(resp.Body).Decode(&errorResponse); err != nil {
-			return nil, fmt.Errorf("ошибка при получении обновлений: статус %d", resp.StatusCode)
-		}
-
-		return nil, fmt.Errorf("ошибка при получении обновлений: %s", errorResponse.Description)
+		domainUpdates = append(domainUpdates, clients.Update{
+			UpdateID: int64(update.UpdateID),
+			Message:  domainMessage,
+		})
 	}
 
-	var updateResponse struct {
-		OK     bool             `json:"ok"`
-		Result []clients.Update `json:"result"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&updateResponse); err != nil {
-		return nil, fmt.Errorf("ошибка при декодировании ответа: %v", err)
-	}
-
-	if !updateResponse.OK {
-		return nil, fmt.Errorf("ошибка при получении обновлений: запрос не выполнен")
-	}
-
-	return updateResponse.Result, nil
+	return domainUpdates, nil
 }
 
-func (c *TelegramClient) SetMyCommands(ctx context.Context, commands []clients.BotCommand) error {
-	url := fmt.Sprintf("%s/setMyCommands", c.baseURL)
-
-	data := map[string]interface{}{
-		"commands": commands,
+func (c *TelegramClient) SetMyCommands(_ context.Context, commands []clients.BotCommand) error {
+	if c.bot == nil {
+		return fmt.Errorf("telegram клиент не инициализирован")
 	}
 
-	jsonData, err := json.Marshal(data)
+	botAPICommands := make([]tgbotapi.BotCommand, 0, len(commands))
+	for _, cmd := range commands {
+		botAPICommands = append(botAPICommands, tgbotapi.BotCommand{
+			Command:     cmd.Command,
+			Description: cmd.Description,
+		})
+	}
+
+	setCommandsConfig := tgbotapi.NewSetMyCommands(botAPICommands...)
+
+	_, err := c.bot.Request(setCommandsConfig)
 	if err != nil {
-		return c.sanitizeError(err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(jsonData)))
-	if err != nil {
-		return c.sanitizeError(err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return c.sanitizeError(err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var errorResponse struct {
-			Description string `json:"description"`
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&errorResponse); err != nil {
-			return fmt.Errorf("ошибка при установке команд бота: статус %d", resp.StatusCode)
-		}
-
-		return fmt.Errorf("ошибка при установке команд бота: %s", errorResponse.Description)
-	}
-
-	var response struct {
-		Ok     bool   `json:"ok"`
-		Result bool   `json:"result"`
-		Error  string `json:"description,omitempty"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return fmt.Errorf("ошибка при декодировании ответа: %w", c.sanitizeError(err))
-	}
-
-	if !response.Ok {
-		return fmt.Errorf("ошибка при установке команд бота: %s", response.Error)
+		return fmt.Errorf("ошибка при установке команд бота: %w", err)
 	}
 
 	return nil
+}
+
+func (c *TelegramClient) GetBot() *tgbotapi.BotAPI {
+	return c.bot
 }

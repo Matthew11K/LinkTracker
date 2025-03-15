@@ -12,7 +12,6 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/repositories/mocks"
 	domainservices "github.com/central-university-dev/go-Matthew11K/internal/domain/services"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -320,8 +319,7 @@ func TestBotService_SendLinkUpdate(t *testing.T) {
 		TgChatIDs:   []int64{123456, 654321},
 	}
 
-	mockTelegramClient.On("SendMessage", ctx, int64(123456), mock.AnythingOfType("string")).Return(nil).Once()
-	mockTelegramClient.On("SendMessage", ctx, int64(654321), mock.AnythingOfType("string")).Return(nil).Once()
+	mockTelegramClient.On("SendUpdate", ctx, update).Return(nil).Once()
 
 	err := botService.SendLinkUpdate(ctx, update)
 

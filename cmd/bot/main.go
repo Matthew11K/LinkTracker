@@ -101,7 +101,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	telegramClient := infraclients.NewTelegramClient(cfg.TelegramBotToken)
+	telegramClient := infraclients.NewTelegramClient(cfg.TelegramBotToken, appLogger)
 	setupTelegramCommands(telegramClient, appLogger)
 
 	linkAnalyzer := domainservices.NewLinkAnalyzer()
