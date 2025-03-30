@@ -20,6 +20,7 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/internal/bot/telegram"
 	commonservice "github.com/central-university-dev/go-Matthew11K/internal/common"
 	"github.com/central-university-dev/go-Matthew11K/internal/config"
+	"github.com/central-university-dev/go-Matthew11K/internal/database"
 	"github.com/central-university-dev/go-Matthew11K/pkg"
 )
 
@@ -91,7 +92,25 @@ func main() {
 
 	cfg := config.LoadConfig()
 
-	chatStateRepo := repository.NewChatStateRepository()
+	ctx := context.Background()
+	db, err := database.NewPostgresDB(ctx, cfg, appLogger)
+	if err != nil {
+		appLogger.Error("Ошибка при подключении к базе данных",
+			"error", err,
+		)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	repoFactory := repository.NewFactory(db, cfg, appLogger)
+
+	chatStateRepo, err := repoFactory.CreateChatStateRepository()
+	if err != nil {
+		appLogger.Error("Ошибка при создании репозитория состояний чата",
+			"error", err,
+		)
+		os.Exit(1)
+	}
 
 	scrapperClient, err := clients.NewScrapperClient(cfg.ScrapperBaseURL)
 	if err != nil {

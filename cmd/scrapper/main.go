@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/common"
+	"github.com/central-university-dev/go-Matthew11K/internal/database"
 	clients2 "github.com/central-university-dev/go-Matthew11K/internal/scrapper/clients"
+	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/notify"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/repository"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/scheduler"
 
@@ -23,7 +25,9 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/pkg"
 )
 
-func gracefulShutdown(server *http.Server, scheduler *scheduler.Scheduler, stopCh <-chan struct{}, appLogger *slog.Logger) {
+func gracefulShutdown(server *http.Server, scheduler interface {
+	Stop()
+}, stopCh <-chan struct{}, appLogger *slog.Logger) {
 	<-stopCh
 	appLogger.Info("Получен сигнал завершения")
 
@@ -72,12 +76,53 @@ func main() {
 
 	cfg := config.LoadConfig()
 
-	linkRepo := repository.NewLinkRepository()
-	chatRepo := repository.NewChatRepository()
-
-	botClient, err := clients2.NewBotAPIClient(cfg.BotBaseURL)
+	ctx := context.Background()
+	db, err := database.NewPostgresDB(ctx, cfg, appLogger)
 	if err != nil {
-		appLogger.Error("Ошибка при создании клиента бота",
+		appLogger.Error("Ошибка при подключении к базе данных",
+			"error", err,
+		)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	repoFactory := repository.NewFactory(db, cfg, appLogger)
+
+	linkRepo, err := repoFactory.CreateLinkRepository()
+	if err != nil {
+		appLogger.Error("Ошибка при создании репозитория ссылок",
+			"error", err,
+		)
+		os.Exit(1)
+	}
+
+	chatRepo, err := repoFactory.CreateChatRepository()
+	if err != nil {
+		appLogger.Error("Ошибка при создании репозитория чатов",
+			"error", err,
+		)
+		os.Exit(1)
+	}
+
+	githubDetailsRepo, err := repoFactory.CreateGitHubDetailsRepository()
+	if err != nil {
+		appLogger.Error("Ошибка при создании репозитория деталей GitHub",
+			"error", err,
+		)
+		os.Exit(1)
+	}
+
+	stackOverflowDetailsRepo, err := repoFactory.CreateStackOverflowDetailsRepository()
+	if err != nil {
+		appLogger.Error("Ошибка при создании репозитория деталей StackOverflow",
+			"error", err,
+		)
+		os.Exit(1)
+	}
+
+	botNotifier, err := notify.NewHTTPBotNotifier(cfg.BotBaseURL, appLogger)
+	if err != nil {
+		appLogger.Error("Ошибка при создании нотификатора бота",
 			"error", err,
 		)
 		os.Exit(1)
@@ -92,13 +137,17 @@ func main() {
 	scrapperService := service.NewScrapperService(
 		linkRepo,
 		chatRepo,
-		botClient,
+		botNotifier,
+		githubDetailsRepo,
+		stackOverflowDetailsRepo,
 		updaterFactory,
 		linkAnalyzer,
 		appLogger,
 	)
 
-	scrapperHandler := handler.NewScrapperHandler(scrapperService)
+	tagService := service.NewTagService(linkRepo, chatRepo, appLogger)
+
+	scrapperHandler := handler.NewScrapperHandler(scrapperService, tagService)
 
 	server, err := v1_scrapper.NewServer(scrapperHandler)
 	if err != nil {
@@ -108,7 +157,30 @@ func main() {
 		os.Exit(1)
 	}
 
-	sch := scheduler.NewScheduler(scrapperService, cfg.SchedulerCheckInterval, appLogger)
+	var sch interface {
+		Start()
+		Stop()
+	}
+
+	if cfg.UseParallelScheduler {
+		appLogger.Info("Использование параллельного шедулера",
+			"batchSize", cfg.DatabaseBatchSize,
+			"workers", cfg.SchedulerWorkers,
+		)
+		sch = scheduler.NewParallelScheduler(
+			scrapperService,
+			linkRepo,
+			cfg.SchedulerCheckInterval,
+			cfg.DatabaseBatchSize,
+			cfg.SchedulerWorkers,
+			appLogger,
+		)
+	} else {
+		appLogger.Info("Использование обычного шедулера")
+		appLogger.Error("Обычный шедулер больше не поддерживается в текущей конфигурации")
+		os.Exit(1)
+	}
+
 	sch.Start()
 
 	httpServer := &http.Server{

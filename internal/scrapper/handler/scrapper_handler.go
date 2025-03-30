@@ -22,17 +22,24 @@ type ScrapperService interface {
 	RemoveLink(ctx context.Context, chatID int64, url string) (*models.Link, error)
 
 	GetLinks(ctx context.Context, chatID int64) ([]*models.Link, error)
+}
 
-	CheckUpdates(ctx context.Context) error
+type TagService interface {
+	AddTagToLink(ctx context.Context, chatID int64, url string, tag string) error
+	RemoveTagFromLink(ctx context.Context, chatID int64, url string, tag string) error
+	GetLinksByTag(ctx context.Context, chatID int64, tag string) ([]*models.Link, error)
+	GetAllTags(ctx context.Context, chatID int64) ([]string, error)
 }
 
 type ScrapperHandler struct {
 	scrapperService ScrapperService
+	tagService      TagService
 }
 
-func NewScrapperHandler(scrapperService ScrapperService) *ScrapperHandler {
+func NewScrapperHandler(scrapperService ScrapperService, tagService TagService) *ScrapperHandler {
 	return &ScrapperHandler{
 		scrapperService: scrapperService,
+		tagService:      tagService,
 	}
 }
 

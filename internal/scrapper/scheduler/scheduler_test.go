@@ -7,58 +7,54 @@ import (
 	"testing"
 	"time"
 
+	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/scheduler"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/scheduler/mocks"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
 
-func TestScheduler_Start(t *testing.T) {
-	mockCheckUpdater := new(mocks.CheckUpdater)
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	interval := 100 * time.Millisecond
-	//nolint //тест
-	mockCheckUpdater.On("CheckUpdates", mock.MatchedBy(func(ctx context.Context) bool {
-		return true
-	})).Return(nil)
+func TestParallelScheduler_ProcessBatches(t *testing.T) {
+	mockLinkProcessor := mocks.NewLinkProcessor(t)
+	mockLinkRepo := mocks.NewLinkRepository(t)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	scheduler := scheduler.NewScheduler(mockCheckUpdater, interval, logger)
-	scheduler.Start()
+	batchSize := 2
+	workers := 2
+	ctx := context.Background()
 
-	time.Sleep(150 * time.Millisecond)
-	scheduler.Stop()
+	link1 := &models.Link{ID: 1, URL: "url1"}
+	link2 := &models.Link{ID: 2, URL: "url2"}
+	link3 := &models.Link{ID: 3, URL: "url3"}
+	linksBatch1 := []*models.Link{link1, link2}
+	linksBatch2 := []*models.Link{link3}
 
-	mockCheckUpdater.AssertExpectations(t)
-}
+	mockLinkRepo.EXPECT().
+		FindDue(ctx, batchSize, 0).
+		Return(linksBatch1, nil).
+		Once()
+	mockLinkRepo.EXPECT().
+		FindDue(ctx, batchSize, batchSize).
+		Return(linksBatch2, nil).
+		Once()
+	mockLinkRepo.EXPECT().
+		FindDue(ctx, batchSize, batchSize+len(linksBatch2)).
+		Return([]*models.Link{}, nil).
+		Once()
 
-func TestScheduler_Stop(t *testing.T) {
-	mockCheckUpdater := new(mocks.CheckUpdater)
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	interval := 1 * time.Second
+	mockLinkProcessor.EXPECT().ProcessLink(ctx, link1).Return(true, nil).Once()
+	mockLinkProcessor.EXPECT().ProcessLink(ctx, link2).Return(false, nil).Once()
+	mockLinkProcessor.EXPECT().ProcessLink(ctx, link3).Return(true, nil).Once()
 
-	scheduler := scheduler.NewScheduler(mockCheckUpdater, interval, logger)
+	parallelScheduler := scheduler.NewParallelScheduler(
+		mockLinkProcessor,
+		mockLinkRepo,
+		1*time.Hour,
+		batchSize,
+		workers,
+		logger,
+	)
 
-	scheduler.Start()
-	scheduler.Stop()
+	parallelScheduler.ProcessBatches(ctx)
 
-	mockCheckUpdater.AssertNotCalled(t, "CheckUpdates", mock.Anything)
-}
-
-func TestScheduler_CheckUpdatesWithError(t *testing.T) {
-	mockCheckUpdater := new(mocks.CheckUpdater)
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	interval := 100 * time.Millisecond
-	//nolint //тест
-	mockCheckUpdater.On("CheckUpdates", mock.MatchedBy(func(ctx context.Context) bool {
-		return true
-	})).Return(assert.AnError)
-
-	scheduler := scheduler.NewScheduler(mockCheckUpdater, interval, logger)
-	scheduler.Start()
-
-	time.Sleep(150 * time.Millisecond)
-	scheduler.Stop()
-
-	mockCheckUpdater.AssertExpectations(t)
+	mockLinkRepo.AssertExpectations(t)
+	mockLinkProcessor.AssertExpectations(t)
 }

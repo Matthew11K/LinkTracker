@@ -75,3 +75,100 @@ type ErrMissingRequiredField struct {
 func (e *ErrMissingRequiredField) Error() string {
 	return fmt.Sprintf("отсутствует обязательное поле: %s", e.FieldName)
 }
+
+type ErrDetailsNotFound struct {
+	LinkID int64
+}
+
+func (e *ErrDetailsNotFound) Error() string {
+	return fmt.Sprintf("детали для ссылки с ID %d не найдены", e.LinkID)
+}
+
+type ErrUnknownDBAccessType struct {
+	AccessType string
+}
+
+func (e *ErrUnknownDBAccessType) Error() string {
+	return fmt.Sprintf("неизвестный тип доступа к базе данных: %s", e.AccessType)
+}
+
+type ErrBeginTransaction struct {
+	Cause error
+}
+
+func (e *ErrBeginTransaction) Error() string {
+	return fmt.Sprintf("ошибка при начале транзакции: %v", e.Cause)
+}
+
+func (e *ErrBeginTransaction) Unwrap() error {
+	return e.Cause
+}
+
+type ErrBuildSQLQuery struct {
+	Operation string
+	Cause     error
+}
+
+func (e *ErrBuildSQLQuery) Error() string {
+	return fmt.Sprintf("ошибка при построении SQL запроса для %s: %v", e.Operation, e.Cause)
+}
+
+func (e *ErrBuildSQLQuery) Unwrap() error {
+	return e.Cause
+}
+
+type ErrSQLExecution struct {
+	Operation string
+	Cause     error
+}
+
+func (e *ErrSQLExecution) Error() string {
+	return fmt.Sprintf("ошибка при выполнении SQL запроса для %s: %v", e.Operation, e.Cause)
+}
+
+func (e *ErrSQLExecution) Unwrap() error {
+	return e.Cause
+}
+
+type ErrSQLScan struct {
+	Entity string
+	Cause  error
+}
+
+func (e *ErrSQLScan) Error() string {
+	return fmt.Sprintf("ошибка при сканировании %s: %v", e.Entity, e.Cause)
+}
+
+func (e *ErrSQLScan) Unwrap() error {
+	return e.Cause
+}
+
+type ErrCommitTransaction struct {
+	Cause error
+}
+
+func (e *ErrCommitTransaction) Error() string {
+	return fmt.Sprintf("ошибка при фиксации транзакции: %v", e.Cause)
+}
+
+func (e *ErrCommitTransaction) Unwrap() error {
+	return e.Cause
+}
+
+type ErrTagAlreadyExists struct {
+	Tag string
+	URL string
+}
+
+func (e *ErrTagAlreadyExists) Error() string {
+	return fmt.Sprintf("тег '%s' уже добавлен к ссылке '%s'", e.Tag, e.URL)
+}
+
+type ErrTagNotFound struct {
+	Tag string
+	URL string
+}
+
+func (e *ErrTagNotFound) Error() string {
+	return fmt.Sprintf("тег '%s' не найден для ссылки '%s'", e.Tag, e.URL)
+}

@@ -10,10 +10,12 @@ import (
 
 type LinkUpdater interface {
 	GetLastUpdate(ctx context.Context, url string) (time.Time, error)
+	GetUpdateDetails(ctx context.Context, url string) (*models.UpdateInfo, error)
 }
 
 type GitHubClient interface {
 	GetRepositoryLastUpdate(ctx context.Context, owner, repo string) (time.Time, error)
+	GetRepositoryDetails(ctx context.Context, owner, repo string) (*models.GitHubDetails, error)
 }
 
 type GitHubUpdater struct {
@@ -35,8 +37,31 @@ func (u *GitHubUpdater) GetLastUpdate(ctx context.Context, url string) (time.Tim
 	return u.client.GetRepositoryLastUpdate(ctx, owner, repo)
 }
 
+func (u *GitHubUpdater) GetUpdateDetails(ctx context.Context, url string) (*models.UpdateInfo, error) {
+	owner, repo, err := ParseGitHubURL(url)
+	if err != nil {
+		return nil, err
+	}
+
+	details, err := u.client.GetRepositoryDetails(ctx, owner, repo)
+	if err != nil {
+		return nil, err
+	}
+
+	textPreview := models.TextPreview(details.Description, 200)
+
+	return &models.UpdateInfo{
+		Title:       details.Title,
+		Author:      details.Author,
+		UpdatedAt:   details.UpdatedAt,
+		ContentType: "repository",
+		TextPreview: textPreview,
+	}, nil
+}
+
 type StackOverflowClient interface {
 	GetQuestionLastUpdate(ctx context.Context, questionID int64) (time.Time, error)
+	GetQuestionDetails(ctx context.Context, questionID int64) (*models.StackOverflowDetails, error)
 }
 
 type StackOverflowUpdater struct {
@@ -56,6 +81,28 @@ func (u *StackOverflowUpdater) GetLastUpdate(ctx context.Context, url string) (t
 	}
 
 	return u.client.GetQuestionLastUpdate(ctx, questionID)
+}
+
+func (u *StackOverflowUpdater) GetUpdateDetails(ctx context.Context, url string) (*models.UpdateInfo, error) {
+	questionID, err := ParseStackOverflowURL(url)
+	if err != nil {
+		return nil, err
+	}
+
+	details, err := u.client.GetQuestionDetails(ctx, questionID)
+	if err != nil {
+		return nil, err
+	}
+
+	textPreview := models.TextPreview(details.Content, 200)
+
+	return &models.UpdateInfo{
+		Title:       details.Title,
+		Author:      details.Author,
+		UpdatedAt:   details.UpdatedAt,
+		ContentType: "question",
+		TextPreview: textPreview,
+	}, nil
 }
 
 type LinkUpdaterFactory struct {

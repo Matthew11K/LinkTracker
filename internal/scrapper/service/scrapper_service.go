@@ -11,7 +11,7 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 )
 
-type BotClient interface {
+type BotNotifier interface {
 	SendUpdate(ctx context.Context, update *models.LinkUpdate) error
 }
 
@@ -29,6 +29,8 @@ type ChatRepository interface {
 	RemoveLink(ctx context.Context, chatID int64, linkID int64) error
 
 	GetAll(ctx context.Context) ([]*models.Chat, error)
+
+	FindByLinkID(ctx context.Context, linkID int64) ([]*models.Chat, error)
 }
 
 type LinkRepository interface {
@@ -42,37 +44,53 @@ type LinkRepository interface {
 
 	DeleteByURL(ctx context.Context, url string, chatID int64) error
 
-	GetAll(ctx context.Context) ([]*models.Link, error)
-
 	Update(ctx context.Context, link *models.Link) error
 
 	AddChatLink(ctx context.Context, chatID int64, linkID int64) error
 }
 
+type GitHubDetailsRepository interface {
+	Save(ctx context.Context, details *models.GitHubDetails) error
+	FindByLinkID(ctx context.Context, linkID int64) (*models.GitHubDetails, error)
+	Update(ctx context.Context, details *models.GitHubDetails) error
+}
+
+type StackOverflowDetailsRepository interface {
+	Save(ctx context.Context, details *models.StackOverflowDetails) error
+	FindByLinkID(ctx context.Context, linkID int64) (*models.StackOverflowDetails, error)
+	Update(ctx context.Context, details *models.StackOverflowDetails) error
+}
+
 type ScrapperService struct {
-	linkRepo       LinkRepository
-	chatRepo       ChatRepository
-	botClient      BotClient
-	linkAnalyzer   *common.LinkAnalyzer
-	updaterFactory *common.LinkUpdaterFactory
-	logger         *slog.Logger
+	linkRepo          LinkRepository
+	chatRepo          ChatRepository
+	botClient         BotNotifier
+	githubRepo        GitHubDetailsRepository
+	stackOverflowRepo StackOverflowDetailsRepository
+	linkAnalyzer      *common.LinkAnalyzer
+	updaterFactory    *common.LinkUpdaterFactory
+	logger            *slog.Logger
 }
 
 func NewScrapperService(
 	linkRepo LinkRepository,
 	chatRepo ChatRepository,
-	botClient BotClient,
+	botClient BotNotifier,
+	githubRepo GitHubDetailsRepository,
+	stackOverflowRepo StackOverflowDetailsRepository,
 	updaterFactory *common.LinkUpdaterFactory,
 	linkAnalyzer *common.LinkAnalyzer,
 	logger *slog.Logger,
 ) *ScrapperService {
 	return &ScrapperService{
-		linkRepo:       linkRepo,
-		chatRepo:       chatRepo,
-		botClient:      botClient,
-		linkAnalyzer:   linkAnalyzer,
-		updaterFactory: updaterFactory,
-		logger:         logger,
+		linkRepo:          linkRepo,
+		chatRepo:          chatRepo,
+		botClient:         botClient,
+		githubRepo:        githubRepo,
+		stackOverflowRepo: stackOverflowRepo,
+		linkAnalyzer:      linkAnalyzer,
+		updaterFactory:    updaterFactory,
+		logger:            logger,
 	}
 }
 
@@ -192,85 +210,153 @@ func (s *ScrapperService) GetLinks(ctx context.Context, chatID int64) ([]*models
 	return s.linkRepo.FindByChatID(ctx, chatID)
 }
 
-//nolint:funlen // Функция логически целостная и не требует разбиения на более мелкие части
-func (s *ScrapperService) CheckUpdates(ctx context.Context) error {
-	links, err := s.linkRepo.GetAll(ctx)
+func (s *ScrapperService) ProcessLink(ctx context.Context, link *models.Link) (bool, error) {
+	updated, err := s.checkLinkUpdate(ctx, link)
 	if err != nil {
-		return err
+		// Ошибка уже залогирована в checkLinkUpdate
+		return false, err // Возвращаем ошибку, чтобы планировщик знал о проблеме
 	}
 
-	s.logger.Info("Проверка обновлений",
-		"linksCount", len(links),
+	if !updated {
+		return false, nil // Обновлений нет
+	}
+
+	s.logger.Info("Обнаружено обновление ссылки, отправка уведомлений",
+		"url", link.URL,
+		"updatedAt", link.LastUpdated,
 	)
 
-	for _, link := range links {
-		s.logger.Info("Проверка обновлений для ссылки",
-			"url", link.URL,
-			"id", link.ID,
-			"type", link.Type,
+	chats, err := s.chatRepo.FindByLinkID(ctx, link.ID)
+	if err != nil {
+		s.logger.Error("Ошибка при получении списка чатов для ссылки",
+			"error", err,
+			"linkID", link.ID,
 		)
+		return true, err
+	}
 
-		updated, err := s.checkLinkUpdate(ctx, link)
-		if err != nil {
-			s.logger.Error("Ошибка при проверке обновлений для ссылки",
-				"url", link.URL,
-				"error", err,
-			)
+	chatIDs := make([]int64, 0, len(chats))
+	for _, chat := range chats {
+		chatIDs = append(chatIDs, chat.ID)
+	}
 
-			continue
+	if len(chatIDs) == 0 {
+		s.logger.Info("Нет подписчиков для уведомления об обновлении ссылки", "linkID", link.ID)
+		return true, nil
+	}
+
+	updater, err := s.updaterFactory.CreateUpdater(link.Type)
+	if err != nil {
+		s.logger.Error("Ошибка при создании updater",
+			"error", err,
+			"linkType", link.Type,
+		)
+		return true, err
+	}
+
+	var updateInfo *models.UpdateInfo
+	updateInfo, err = updater.GetUpdateDetails(ctx, link.URL)
+	if err != nil {
+		s.logger.Error("Ошибка при получении деталей обновления",
+			"error", err,
+			"url", link.URL,
+		)
+	}
+
+	if updateInfo != nil {
+		s.saveDetailsToRepository(ctx, link, updateInfo)
+	}
+
+	var description string
+	switch link.Type {
+	case models.GitHub:
+		description = "Обнаружено обновление GitHub репозитория"
+	case models.StackOverflow:
+		description = "Обнаружено обновление вопроса StackOverflow"
+	default:
+		description = "Обнаружено обновление ссылки"
+	}
+
+	update := &models.LinkUpdate{
+		ID:          link.ID,
+		URL:         link.URL,
+		Description: description,
+		TgChatIDs:   chatIDs,
+		UpdateInfo:  updateInfo,
+	}
+
+	err = s.botClient.SendUpdate(ctx, update)
+	if err != nil {
+		s.logger.Error("Ошибка при отправке уведомления об обновлении",
+			"error", err,
+		)
+		return true, err
+	} else {
+		s.logger.Info("Уведомление об обновлении успешно отправлено",
+			"linkID", link.ID,
+			"chatsCount", len(chatIDs),
+		)
+	}
+
+	return true, nil
+}
+
+func (s *ScrapperService) saveDetailsToRepository(ctx context.Context, link *models.Link, info *models.UpdateInfo) {
+	switch link.Type {
+	case models.GitHub:
+		details := &models.GitHubDetails{
+			LinkID:      link.ID,
+			Title:       info.Title,
+			Author:      info.Author,
+			UpdatedAt:   info.UpdatedAt,
+			Description: info.TextPreview,
 		}
 
-		s.logger.Info("Результат проверки",
-			"url", link.URL,
-			"updated", updated,
-		)
-
-		if updated {
-			chats, err := s.chatRepo.GetAll(ctx)
-			if err != nil {
-				s.logger.Error("Ошибка при получении списка чатов",
+		existingDetails, err := s.githubRepo.FindByLinkID(ctx, link.ID)
+		if err == nil {
+			details.LinkID = existingDetails.LinkID
+			if err := s.githubRepo.Update(ctx, details); err != nil {
+				s.logger.Error("Ошибка при обновлении деталей GitHub",
 					"error", err,
+					"linkID", link.ID,
 				)
-
-				continue
 			}
-
-			var chatIDs []int64
-
-			for _, chat := range chats {
-				for _, linkID := range chat.Links {
-					if linkID == link.ID {
-						chatIDs = append(chatIDs, chat.ID)
-						break
-					}
-				}
-			}
-
-			s.logger.Info("Отправка уведомления об обновлении",
-				"url", link.URL,
-				"chatsCount", len(chatIDs),
-				"chatIDs", chatIDs,
-			)
-
-			update := &models.LinkUpdate{
-				ID:          link.ID,
-				URL:         link.URL,
-				Description: "Обнаружено обновление",
-				TgChatIDs:   chatIDs,
-			}
-
-			err = s.botClient.SendUpdate(ctx, update)
-			if err != nil {
-				s.logger.Error("Ошибка при отправке уведомления об обновлении",
+		} else {
+			if err := s.githubRepo.Save(ctx, details); err != nil {
+				s.logger.Error("Ошибка при сохранении деталей GitHub",
 					"error", err,
+					"linkID", link.ID,
 				)
-			} else {
-				s.logger.Info("Уведомление об обновлении успешно отправлено")
+			}
+		}
+
+	case models.StackOverflow:
+		details := &models.StackOverflowDetails{
+			LinkID:    link.ID,
+			Title:     info.Title,
+			Author:    info.Author,
+			UpdatedAt: info.UpdatedAt,
+			Content:   info.TextPreview,
+		}
+
+		existingDetails, err := s.stackOverflowRepo.FindByLinkID(ctx, link.ID)
+		if err == nil {
+			details.LinkID = existingDetails.LinkID
+			if err := s.stackOverflowRepo.Update(ctx, details); err != nil {
+				s.logger.Error("Ошибка при обновлении деталей StackOverflow",
+					"error", err,
+					"linkID", link.ID,
+				)
+			}
+		} else {
+			if err := s.stackOverflowRepo.Save(ctx, details); err != nil {
+				s.logger.Error("Ошибка при сохранении деталей StackOverflow",
+					"error", err,
+					"linkID", link.ID,
+				)
 			}
 		}
 	}
-
-	return nil
 }
 
 func (s *ScrapperService) checkLinkUpdate(ctx context.Context, link *models.Link) (bool, error) {

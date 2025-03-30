@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 	"github.com/go-resty/resty/v2"
 )
 
@@ -16,6 +17,7 @@ type StackOverflowClient struct {
 
 type QuestionUpdateGetter interface {
 	GetQuestionLastUpdate(ctx context.Context, questionID int64) (time.Time, error)
+	GetQuestionDetails(ctx context.Context, questionID int64) (*models.StackOverflowDetails, error)
 }
 
 func NewStackOverflowClient(key, baseURL string) QuestionUpdateGetter {
@@ -38,7 +40,12 @@ type StackOverflowResponse struct {
 }
 
 type Question struct {
-	LastActivityDate int64 `json:"last_activity_date"`
+	LastActivityDate int64  `json:"last_activity_date"`
+	Title            string `json:"title"`
+	Body             string `json:"body"`
+	Owner            struct {
+		DisplayName string `json:"display_name"`
+	} `json:"owner"`
 }
 
 func (c *StackOverflowClient) GetQuestionLastUpdate(ctx context.Context, questionID int64) (time.Time, error) {
@@ -77,4 +84,47 @@ func (c *StackOverflowClient) GetQuestionLastUpdate(ctx context.Context, questio
 	lastUpdate := time.Unix(response.Items[0].LastActivityDate, 0)
 
 	return lastUpdate, nil
+}
+
+func (c *StackOverflowClient) GetQuestionDetails(ctx context.Context, questionID int64) (*models.StackOverflowDetails, error) {
+	url := fmt.Sprintf("%s/questions/%d", c.baseURL, questionID)
+
+	request := c.client.R().
+		SetContext(ctx).
+		SetQueryParam("site", "stackoverflow").
+		SetQueryParam("filter", "withbody")
+
+	if c.key != "" {
+		request.SetQueryParam("key", c.key)
+	}
+
+	var response struct {
+		Items []Question `json:"items"`
+	}
+
+	resp, err := request.
+		SetResult(&response).
+		Get(url)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if !resp.IsSuccess() {
+		return nil, fmt.Errorf("StackOverflow API вернул статус: %d", resp.StatusCode())
+	}
+
+	if len(response.Items) == 0 {
+		return nil, fmt.Errorf("вопрос с ID %d не найден", questionID)
+	}
+
+	question := response.Items[0]
+	details := &models.StackOverflowDetails{
+		Title:     question.Title,
+		Author:    question.Owner.DisplayName,
+		UpdatedAt: time.Unix(question.LastActivityDate, 0),
+		Content:   question.Body,
+	}
+
+	return details, nil
 }

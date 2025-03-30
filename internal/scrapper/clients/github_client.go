@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 	"github.com/go-resty/resty/v2"
 )
 
@@ -16,6 +17,7 @@ type GitHubClient struct {
 
 type RepositoryUpdateGetter interface {
 	GetRepositoryLastUpdate(ctx context.Context, owner, repo string) (time.Time, error)
+	GetRepositoryDetails(ctx context.Context, owner, repo string) (*models.GitHubDetails, error)
 }
 
 func NewGitHubClient(token, baseURL string) RepositoryUpdateGetter {
@@ -34,7 +36,13 @@ func NewGitHubClient(token, baseURL string) RepositoryUpdateGetter {
 }
 
 type Repository struct {
-	UpdatedAt time.Time `json:"updated_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Name        string    `json:"name"`
+	FullName    string    `json:"full_name"`
+	Description string    `json:"description"`
+	Owner       struct {
+		Login string `json:"login"`
+	} `json:"owner"`
 }
 
 func (c *GitHubClient) GetRepositoryLastUpdate(ctx context.Context, owner, repo string) (time.Time, error) {
@@ -65,4 +73,39 @@ func (c *GitHubClient) GetRepositoryLastUpdate(ctx context.Context, owner, repo 
 	}
 
 	return repository.UpdatedAt, nil
+}
+
+func (c *GitHubClient) GetRepositoryDetails(ctx context.Context, owner, repo string) (*models.GitHubDetails, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, owner, repo)
+
+	request := c.client.R().
+		SetContext(ctx).
+		SetHeader("Accept", "application/vnd.github.v3+json")
+
+	if c.token != "" {
+		request.SetHeader("Authorization", "token "+c.token)
+	}
+
+	var repository Repository
+
+	resp, err := request.
+		SetResult(&repository).
+		Get(url)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if !resp.IsSuccess() {
+		return nil, fmt.Errorf("GitHub API вернул статус: %d", resp.StatusCode())
+	}
+
+	details := &models.GitHubDetails{
+		Title:       repository.FullName,
+		Author:      repository.Owner.Login,
+		UpdatedAt:   repository.UpdatedAt,
+		Description: repository.Description,
+	}
+
+	return details, nil
 }
