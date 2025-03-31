@@ -31,6 +31,7 @@ func NewHTTPBotNotifier(baseURL string, logger *slog.Logger) (*HTTPBotNotifier, 
 	}, nil
 }
 
+//nolint:funlen // Длина функции обусловлена необходимостью последовательной обработки данных и формирования запроса.
 func (n *HTTPBotNotifier) SendUpdate(ctx context.Context, update *models.LinkUpdate) error {
 	n.logger.Info("Отправка уведомления в бота",
 		"linkID", update.ID,
@@ -39,6 +40,7 @@ func (n *HTTPBotNotifier) SendUpdate(ctx context.Context, update *models.LinkUpd
 	)
 
 	description := update.Description
+
 	if update.UpdateInfo != nil {
 		info := update.UpdateInfo
 
@@ -100,9 +102,11 @@ func (n *HTTPBotNotifier) SendUpdate(ctx context.Context, update *models.LinkUpd
 		n.logger.Error("Ошибка при отправке уведомления в бота",
 			"error", err,
 		)
+
 		return fmt.Errorf("ошибка при отправке уведомления в бота: %w", err)
 	}
 
 	n.logger.Info("Уведомление успешно отправлено")
+
 	return nil
 }

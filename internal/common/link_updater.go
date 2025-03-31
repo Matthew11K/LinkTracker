@@ -49,6 +49,7 @@ func (u *GitHubUpdater) GetUpdateDetails(ctx context.Context, url string) (*mode
 	}
 
 	textPreview := models.TextPreview(details.Description, 200)
+	fullText := details.Description
 
 	return &models.UpdateInfo{
 		Title:       details.Title,
@@ -56,6 +57,7 @@ func (u *GitHubUpdater) GetUpdateDetails(ctx context.Context, url string) (*mode
 		UpdatedAt:   details.UpdatedAt,
 		ContentType: "repository",
 		TextPreview: textPreview,
+		FullText:    fullText,
 	}, nil
 }
 
@@ -95,6 +97,7 @@ func (u *StackOverflowUpdater) GetUpdateDetails(ctx context.Context, url string)
 	}
 
 	textPreview := models.TextPreview(details.Content, 200)
+	fullText := details.Content
 
 	return &models.UpdateInfo{
 		Title:       details.Title,
@@ -102,6 +105,7 @@ func (u *StackOverflowUpdater) GetUpdateDetails(ctx context.Context, url string)
 		UpdatedAt:   details.UpdatedAt,
 		ContentType: "question",
 		TextPreview: textPreview,
+		FullText:    fullText,
 	}, nil
 }
 

@@ -22,5 +22,6 @@ func TextPreview(text string, length int) string {
 	if len(text) <= length {
 		return text
 	}
+
 	return text[:length] + "..."
 }

@@ -29,6 +29,7 @@ type UpdateInfo struct {
 	UpdatedAt   time.Time
 	ContentType string
 	TextPreview string
+	FullText    string
 }
 
 type LinkUpdate struct {

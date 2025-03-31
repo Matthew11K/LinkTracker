@@ -34,6 +34,7 @@ func NewParallelScheduler(
 	logger *slog.Logger,
 ) *ParallelScheduler {
 	scheduler := gocron.NewScheduler(time.UTC)
+
 	if workers <= 0 {
 		workers = 4
 	}
@@ -62,6 +63,7 @@ func (s *ParallelScheduler) Start() {
 
 	_, err := s.scheduler.Every(s.interval).Do(func() {
 		s.logger.Info("Запуск параллельной обработки обновлений")
+
 		ctx := context.Background()
 		s.ProcessBatches(ctx)
 	})
@@ -70,6 +72,7 @@ func (s *ParallelScheduler) Start() {
 		s.logger.Error("Ошибка при настройке планировщика",
 			"error", err,
 		)
+
 		return
 	}
 
@@ -83,18 +86,21 @@ func (s *ParallelScheduler) Stop() {
 
 func (s *ParallelScheduler) ProcessBatches(ctx context.Context) {
 	s.logger.Info("Начало обработки ссылок")
+
 	offset := 0
 	batchNum := 1
 	processedCount := 0
 
 	for {
 		s.logger.Debug("Запрос очередной порции ссылок", "batchSize", s.batchSize, "offset", offset)
+
 		links, err := s.linkRepo.FindDue(ctx, s.batchSize, offset)
 		if err != nil {
 			s.logger.Error("Ошибка при получении порции ссылок",
 				"error", err,
 				"offset", offset,
 			)
+
 			break
 		}
 
@@ -128,6 +134,7 @@ func (s *ParallelScheduler) processOneBatch(ctx context.Context, batch []*models
 
 	for i := 0; i < s.workers; i++ {
 		workerID := i + 1
+
 		wg.Add(1)
 
 		go func(workerID int) {
@@ -140,6 +147,7 @@ func (s *ParallelScheduler) processOneBatch(ctx context.Context, batch []*models
 		for _, link := range batch {
 			linkCh <- link
 		}
+
 		close(linkCh)
 	}()
 
@@ -164,6 +172,7 @@ func (s *ParallelScheduler) worker(ctx context.Context, linkCh <-chan *models.Li
 				"url", link.URL,
 				"error", err,
 			)
+
 			continue
 		}
 

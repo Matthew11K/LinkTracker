@@ -29,6 +29,7 @@ func (r *StackOverflowDetailsRepository) Save(ctx context.Context, details *mode
 	if err != nil {
 		return &customerrors.ErrBeginTransaction{Cause: err}
 	}
+
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback(ctx)
@@ -36,12 +37,14 @@ func (r *StackOverflowDetailsRepository) Save(ctx context.Context, details *mode
 	}()
 
 	linkExistsQuery := r.sq.Select("1").From("links").Where(sq.Eq{"id": details.LinkID}).Limit(1)
+
 	query, args, err := linkExistsQuery.ToSql()
 	if err != nil {
 		return &customerrors.ErrBuildSQLQuery{Operation: "проверка существования ссылки", Cause: err}
 	}
 
 	var linkExists bool
+
 	err = tx.QueryRow(ctx, "SELECT EXISTS("+query+")", args...).Scan(&linkExists)
 	if err != nil {
 		return &customerrors.ErrSQLExecution{Operation: "проверка существования ссылки", Cause: err}
@@ -54,7 +57,13 @@ func (r *StackOverflowDetailsRepository) Save(ctx context.Context, details *mode
 	upsertQuery := r.sq.Insert("stackoverflow_details").
 		Columns("link_id", "title", "author", "updated_at", "content").
 		Values(details.LinkID, details.Title, details.Author, details.UpdatedAt, details.Content).
-		Suffix("ON CONFLICT (link_id) DO UPDATE SET title = EXCLUDED.title, author = EXCLUDED.author, updated_at = EXCLUDED.updated_at, content = EXCLUDED.content")
+		Suffix(
+			"ON CONFLICT (link_id) DO UPDATE SET " +
+				"title = EXCLUDED.title, " +
+				"author = EXCLUDED.author, " +
+				"updated_at = EXCLUDED.updated_at, " +
+				"content = EXCLUDED.content",
+		)
 
 	query, args, err = upsertQuery.ToSql()
 	if err != nil {
@@ -85,12 +94,14 @@ func (r *StackOverflowDetailsRepository) FindByLinkID(ctx context.Context, linkI
 	}
 
 	details := &models.StackOverflowDetails{LinkID: linkID}
+
 	err = r.db.Pool.QueryRow(ctx, query, args...).
 		Scan(&details.Title, &details.Author, &details.UpdatedAt, &details.Content)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &customerrors.ErrDetailsNotFound{LinkID: linkID}
 		}
+
 		return nil, &customerrors.ErrSQLExecution{Operation: "поиск деталей StackOverflow", Cause: err}
 	}
 

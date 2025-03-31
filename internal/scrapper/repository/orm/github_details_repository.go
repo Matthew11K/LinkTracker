@@ -29,6 +29,7 @@ func (r *GitHubDetailsRepository) Save(ctx context.Context, details *models.GitH
 	if err != nil {
 		return &customerrors.ErrBeginTransaction{Cause: err}
 	}
+
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback(ctx)
@@ -36,12 +37,14 @@ func (r *GitHubDetailsRepository) Save(ctx context.Context, details *models.GitH
 	}()
 
 	linkExistsQuery := r.sq.Select("1").From("links").Where(sq.Eq{"id": details.LinkID}).Limit(1)
+
 	query, args, err := linkExistsQuery.ToSql()
 	if err != nil {
 		return &customerrors.ErrBuildSQLQuery{Operation: "проверка существования ссылки", Cause: err}
 	}
 
 	var linkExists bool
+
 	err = tx.QueryRow(ctx, "SELECT EXISTS("+query+")", args...).Scan(&linkExists)
 	if err != nil {
 		return &customerrors.ErrSQLExecution{Operation: "проверка существования ссылки", Cause: err}
@@ -54,7 +57,13 @@ func (r *GitHubDetailsRepository) Save(ctx context.Context, details *models.GitH
 	upsertQuery := r.sq.Insert("github_details").
 		Columns("link_id", "title", "author", "updated_at", "description").
 		Values(details.LinkID, details.Title, details.Author, details.UpdatedAt, details.Description).
-		Suffix("ON CONFLICT (link_id) DO UPDATE SET title = EXCLUDED.title, author = EXCLUDED.author, updated_at = EXCLUDED.updated_at, description = EXCLUDED.description")
+		Suffix(
+			"ON CONFLICT (link_id) DO UPDATE SET " +
+				"title = EXCLUDED.title, " +
+				"author = EXCLUDED.author, " +
+				"updated_at = EXCLUDED.updated_at, " +
+				"description = EXCLUDED.description",
+		)
 
 	query, args, err = upsertQuery.ToSql()
 	if err != nil {
@@ -85,12 +94,14 @@ func (r *GitHubDetailsRepository) FindByLinkID(ctx context.Context, linkID int64
 	}
 
 	details := &models.GitHubDetails{LinkID: linkID}
+
 	err = r.db.Pool.QueryRow(ctx, query, args...).
 		Scan(&details.Title, &details.Author, &details.UpdatedAt, &details.Description)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &customerrors.ErrDetailsNotFound{LinkID: linkID}
 		}
+
 		return nil, &customerrors.ErrSQLExecution{Operation: "поиск деталей GitHub", Cause: err}
 	}
 

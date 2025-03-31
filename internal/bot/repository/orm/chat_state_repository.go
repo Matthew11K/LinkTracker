@@ -36,12 +36,14 @@ func (r *ChatStateRepository) GetState(ctx context.Context, chatID int64) (model
 	}
 
 	var state int
+
 	err = r.db.Pool.QueryRow(ctx, query, args...).Scan(&state)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Если состояние не найдено, возвращаем StateIdle (0) по умолчанию
 			return models.StateIdle, nil
 		}
+
 		return models.StateIdle, &customerrors.ErrSQLExecution{Operation: "получение состояния чата", Cause: err}
 	}
 
@@ -53,88 +55,87 @@ func (r *ChatStateRepository) SetState(ctx context.Context, chatID int64, state 
 	if err != nil {
 		return &customerrors.ErrBeginTransaction{Cause: err}
 	}
+
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback(ctx)
 		}
 	}()
 
-	chatExistsQuery := r.sq.Select("1").From("chats").Where(sq.Eq{"chat_id": chatID}).Limit(1)
-	query, args, err := chatExistsQuery.ToSql()
+	stateExists, err := r.checkStateExists(ctx, tx, chatID)
 	if err != nil {
-		return &customerrors.ErrBuildSQLQuery{Operation: "проверка существования чата", Cause: err}
-	}
-
-	var chatExists bool
-	err = tx.QueryRow(ctx, "SELECT EXISTS("+query+")", args...).Scan(&chatExists)
-	if err != nil {
-		return &customerrors.ErrSQLExecution{Operation: "проверка существования чата", Cause: err}
-	}
-
-	if !chatExists {
-		now := time.Now()
-		insertChatQuery := r.sq.Insert("chats").
-			Columns("id", "created_at", "updated_at").
-			Values(chatID, now, now)
-
-		query, args, err = insertChatQuery.ToSql()
-		if err != nil {
-			return &customerrors.ErrBuildSQLQuery{Operation: "вставка чата", Cause: err}
-		}
-
-		_, err = tx.Exec(ctx, query, args...)
-		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "создание чата", Cause: err}
-		}
-	}
-
-	stateExistsQuery := r.sq.Select("1").From("chat_states").Where(sq.Eq{"chat_id": chatID}).Limit(1)
-	query, args, err = stateExistsQuery.ToSql()
-	if err != nil {
-		return &customerrors.ErrBuildSQLQuery{Operation: "проверка существования состояния", Cause: err}
-	}
-
-	var stateExists bool
-	err = tx.QueryRow(ctx, "SELECT EXISTS("+query+")", args...).Scan(&stateExists)
-	if err != nil {
-		return &customerrors.ErrSQLExecution{Operation: "проверка существования состояния", Cause: err}
+		return err
 	}
 
 	now := time.Now()
 	if stateExists {
-		updateQuery := r.sq.Update("chat_states").
-			Set("state", int(state)).
-			Set("updated_at", now).
-			Where(sq.Eq{"chat_id": chatID})
-
-		query, args, err = updateQuery.ToSql()
-		if err != nil {
-			return &customerrors.ErrBuildSQLQuery{Operation: "обновление состояния", Cause: err}
-		}
-
-		_, err = tx.Exec(ctx, query, args...)
-		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "обновление состояния чата", Cause: err}
-		}
+		err = r.updateState(ctx, tx, chatID, state, now)
 	} else {
-		insertQuery := r.sq.Insert("chat_states").
-			Columns("chat_id", "state", "created_at", "updated_at").
-			Values(chatID, int(state), now, now)
+		err = r.insertState(ctx, tx, chatID, state, now)
+	}
 
-		query, args, err = insertQuery.ToSql()
-		if err != nil {
-			return &customerrors.ErrBuildSQLQuery{Operation: "вставка состояния", Cause: err}
-		}
-
-		_, err = tx.Exec(ctx, query, args...)
-		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "создание состояния чата", Cause: err}
-		}
+	if err != nil {
+		return err
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
 		return &customerrors.ErrCommitTransaction{Cause: err}
+	}
+
+	return nil
+}
+
+func (r *ChatStateRepository) checkStateExists(ctx context.Context, tx pgx.Tx, chatID int64) (bool, error) {
+	existsQuery := r.sq.Select("1").From("chat_states").Where(sq.Eq{"chat_id": chatID}).Limit(1)
+
+	query, args, err := existsQuery.ToSql()
+	if err != nil {
+		return false, &customerrors.ErrBuildSQLQuery{Operation: "проверка существования состояния", Cause: err}
+	}
+
+	var stateExists bool
+
+	err = tx.QueryRow(ctx, "SELECT EXISTS("+query+")", args...).Scan(&stateExists)
+	if err != nil {
+		return false, &customerrors.ErrSQLExecution{Operation: "проверка существования состояния", Cause: err}
+	}
+
+	return stateExists, nil
+}
+
+func (r *ChatStateRepository) updateState(ctx context.Context, tx pgx.Tx, chatID int64, state models.ChatState, now time.Time) error {
+	updateQuery := r.sq.Update("chat_states").
+		Set("state", int(state)).
+		Set("updated_at", now).
+		Where(sq.Eq{"chat_id": chatID})
+
+	query, args, err := updateQuery.ToSql()
+	if err != nil {
+		return &customerrors.ErrBuildSQLQuery{Operation: "обновление состояния", Cause: err}
+	}
+
+	_, err = tx.Exec(ctx, query, args...)
+	if err != nil {
+		return &customerrors.ErrSQLExecution{Operation: "обновление состояния чата", Cause: err}
+	}
+
+	return nil
+}
+
+func (r *ChatStateRepository) insertState(ctx context.Context, tx pgx.Tx, chatID int64, state models.ChatState, now time.Time) error {
+	insertQuery := r.sq.Insert("chat_states").
+		Columns("chat_id", "state", "created_at", "updated_at").
+		Values(chatID, int(state), now, now)
+
+	query, args, err := insertQuery.ToSql()
+	if err != nil {
+		return &customerrors.ErrBuildSQLQuery{Operation: "вставка состояния", Cause: err}
+	}
+
+	_, err = tx.Exec(ctx, query, args...)
+	if err != nil {
+		return &customerrors.ErrSQLExecution{Operation: "создание состояния чата", Cause: err}
 	}
 
 	return nil
@@ -154,15 +155,18 @@ func (r *ChatStateRepository) GetData(ctx context.Context, chatID int64, key str
 	}
 
 	var valueStr string
+
 	err = r.db.Pool.QueryRow(ctx, query, args...).Scan(&valueStr)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil // Возвращаем nil, если данные не найдены
 		}
+
 		return nil, &customerrors.ErrSQLExecution{Operation: "получение данных чата", Cause: err}
 	}
 
 	var value interface{}
+
 	err = json.Unmarshal([]byte(valueStr), &value)
 	if err != nil {
 		return nil, &customerrors.ErrSQLScan{Entity: "данные чата", Cause: err}
@@ -176,6 +180,7 @@ func (r *ChatStateRepository) SetData(ctx context.Context, chatID int64, key str
 	if err != nil {
 		return &customerrors.ErrBeginTransaction{Cause: err}
 	}
+
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback(ctx)
@@ -183,12 +188,14 @@ func (r *ChatStateRepository) SetData(ctx context.Context, chatID int64, key str
 	}()
 
 	chatExistsQuery := r.sq.Select("1").From("chats").Where(sq.Eq{"id": chatID}).Limit(1)
+
 	query, args, err := chatExistsQuery.ToSql()
 	if err != nil {
 		return &customerrors.ErrBuildSQLQuery{Operation: "проверка существования чата", Cause: err}
 	}
 
 	var chatExists bool
+
 	err = tx.QueryRow(ctx, "SELECT EXISTS("+query+")", args...).Scan(&chatExists)
 	if err != nil {
 		return &customerrors.ErrSQLExecution{Operation: "проверка существования чата", Cause: err}

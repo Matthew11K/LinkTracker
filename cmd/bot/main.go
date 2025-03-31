@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -88,18 +89,29 @@ func startHTTPServer(server *http.Server, port int, stopCh chan<- struct{}, appL
 }
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Ошибка запуска сервиса: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+//nolint:funlen // Длина функции обусловлена необходимостью последовательной инициализации всех компонентов.
+func run() error {
 	appLogger := pkg.NewLogger(os.Stdout)
 
 	cfg := config.LoadConfig()
 
 	ctx := context.Background()
+
 	db, err := database.NewPostgresDB(ctx, cfg, appLogger)
 	if err != nil {
 		appLogger.Error("Ошибка при подключении к базе данных",
 			"error", err,
 		)
-		os.Exit(1)
+
+		return fmt.Errorf("ошибка подключения к базе данных: %w", err)
 	}
+
 	defer db.Close()
 
 	repoFactory := repository.NewFactory(db, cfg, appLogger)
@@ -109,7 +121,8 @@ func main() {
 		appLogger.Error("Ошибка при создании репозитория состояний чата",
 			"error", err,
 		)
-		os.Exit(1)
+
+		return fmt.Errorf("ошибка создания репозитория состояний чата: %w", err)
 	}
 
 	scrapperClient, err := clients.NewScrapperClient(cfg.ScrapperBaseURL)
@@ -117,7 +130,8 @@ func main() {
 		appLogger.Error("Ошибка при создании клиента скраппера",
 			"error", err,
 		)
-		os.Exit(1)
+
+		return fmt.Errorf("ошибка создания клиента скраппера: %w", err)
 	}
 
 	telegramClient := clients.NewTelegramClient(cfg.TelegramBotToken, appLogger)
@@ -139,7 +153,8 @@ func main() {
 		appLogger.Error("Ошибка при создании сервера",
 			"error", err,
 		)
-		os.Exit(1)
+
+		return fmt.Errorf("ошибка создания сервера: %w", err)
 	}
 
 	poller := telegram.NewPoller(telegramClient, botService, appLogger)
@@ -155,4 +170,6 @@ func main() {
 
 	startHTTPServer(httpServer, cfg.BotServerPort, stopCh, appLogger)
 	gracefulShutdown(httpServer, poller, stopCh, appLogger)
+
+	return nil
 }

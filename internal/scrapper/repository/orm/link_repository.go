@@ -25,11 +25,13 @@ func NewLinkRepository(db *database.PostgresDB) *LinkRepository {
 	}
 }
 
+//nolint:funlen // Длина функции обусловлена необходимостью проверки существования, обновления связанных данных и работы с транзакциями.
 func (r *LinkRepository) Save(ctx context.Context, link *models.Link) error {
 	tx, err := r.db.Pool.Begin(ctx)
 	if err != nil {
 		return &customerrors.ErrBeginTransaction{Cause: err}
 	}
+
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback(ctx)
@@ -37,12 +39,14 @@ func (r *LinkRepository) Save(ctx context.Context, link *models.Link) error {
 	}()
 
 	existsQuery := r.sq.Select("1").From("links").Where(sq.Eq{"url": link.URL}).Limit(1)
+
 	query, args, err := existsQuery.ToSql()
 	if err != nil {
 		return &customerrors.ErrBuildSQLQuery{Operation: "проверка существования ссылки", Cause: err}
 	}
 
 	var exists bool
+
 	err = tx.QueryRow(ctx, "SELECT EXISTS("+query+")", args...).Scan(&exists)
 	if err != nil {
 		return &customerrors.ErrSQLExecution{Operation: "проверка существования ссылки", Cause: err}
@@ -68,6 +72,7 @@ func (r *LinkRepository) Save(ctx context.Context, link *models.Link) error {
 	}
 
 	var id int64
+
 	err = tx.QueryRow(ctx, query, args...).Scan(&id)
 	if err != nil {
 		return &customerrors.ErrSQLExecution{Operation: "сохранение ссылки", Cause: err}
@@ -110,6 +115,7 @@ func (r *LinkRepository) saveTags(ctx context.Context, tx pgx.Tx, linkID int64, 
 		}
 
 		var tagID int64
+
 		err = tx.QueryRow(ctx, query, args...).Scan(&tagID)
 		if err != nil {
 			return &customerrors.ErrSQLExecution{Operation: "сохранение тега " + tag, Cause: err}
@@ -165,12 +171,14 @@ func (r *LinkRepository) FindByID(ctx context.Context, id int64) (*models.Link, 
 	}
 
 	link := &models.Link{ID: id}
+
 	err = r.db.Pool.QueryRow(ctx, query, args...).
 		Scan(&link.URL, &link.Type, &link.LastChecked, &link.LastUpdated, &link.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &customerrors.ErrLinkNotFound{URL: "ID: " + string(rune(id))}
 		}
+
 		return nil, &customerrors.ErrSQLExecution{Operation: "поиск ссылки по ID", Cause: err}
 	}
 
@@ -178,12 +186,14 @@ func (r *LinkRepository) FindByID(ctx context.Context, id int64) (*models.Link, 
 	if err != nil {
 		return nil, err
 	}
+
 	link.Tags = tags
 
 	filters, err := r.getFiltersByLinkID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
+
 	link.Filters = filters
 
 	return link, nil
@@ -207,11 +217,13 @@ func (r *LinkRepository) getTagsByLinkID(ctx context.Context, linkID int64) ([]s
 	defer rows.Close()
 
 	var tags []string
+
 	for rows.Next() {
 		var tag string
 		if err := rows.Scan(&tag); err != nil {
 			return nil, &customerrors.ErrSQLScan{Entity: "тег", Cause: err}
 		}
+
 		tags = append(tags, tag)
 	}
 
@@ -239,11 +251,13 @@ func (r *LinkRepository) getFiltersByLinkID(ctx context.Context, linkID int64) (
 	defer rows.Close()
 
 	var filters []string
+
 	for rows.Next() {
 		var filter string
 		if err := rows.Scan(&filter); err != nil {
 			return nil, &customerrors.ErrSQLScan{Entity: "фильтр", Cause: err}
 		}
+
 		filters = append(filters, filter)
 	}
 
@@ -265,11 +279,13 @@ func (r *LinkRepository) FindByURL(ctx context.Context, url string) (*models.Lin
 	}
 
 	var id int64
+
 	err = r.db.Pool.QueryRow(ctx, query, args...).Scan(&id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &customerrors.ErrLinkNotFound{URL: url}
 		}
+
 		return nil, &customerrors.ErrSQLExecution{Operation: "поиск ссылки по URL", Cause: err}
 	}
 
@@ -294,6 +310,7 @@ func (r *LinkRepository) FindByChatID(ctx context.Context, chatID int64) ([]*mod
 	defer rows.Close()
 
 	var links []*models.Link
+
 	for rows.Next() {
 		link := &models.Link{}
 		if err := rows.Scan(&link.ID, &link.URL, &link.Type, &link.LastChecked, &link.LastUpdated, &link.CreatedAt); err != nil {
@@ -304,12 +321,14 @@ func (r *LinkRepository) FindByChatID(ctx context.Context, chatID int64) ([]*mod
 		if err != nil {
 			return nil, err
 		}
+
 		link.Tags = tags
 
 		filters, err := r.getFiltersByLinkID(ctx, link.ID)
 		if err != nil {
 			return nil, err
 		}
+
 		link.Filters = filters
 
 		links = append(links, link)
@@ -322,11 +341,13 @@ func (r *LinkRepository) FindByChatID(ctx context.Context, chatID int64) ([]*mod
 	return links, nil
 }
 
+//nolint:funlen // Длина функции обусловлена транзакционной обработкой, проверками существования и последовательными операциями удаления.
 func (r *LinkRepository) DeleteByURL(ctx context.Context, url string, chatID int64) error {
 	tx, err := r.db.Pool.Begin(ctx)
 	if err != nil {
 		return &customerrors.ErrBeginTransaction{Cause: err}
 	}
+
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback(ctx)
@@ -343,11 +364,13 @@ func (r *LinkRepository) DeleteByURL(ctx context.Context, url string, chatID int
 	}
 
 	var linkID int64
+
 	err = tx.QueryRow(ctx, query, args...).Scan(&linkID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &customerrors.ErrLinkNotFound{URL: url}
 		}
+
 		return &customerrors.ErrSQLExecution{Operation: "поиск ссылки", Cause: err}
 	}
 
@@ -381,6 +404,7 @@ func (r *LinkRepository) DeleteByURL(ctx context.Context, url string, chatID int
 	}
 
 	var count int
+
 	err = tx.QueryRow(ctx, query, args...).Scan(&count)
 	if err != nil {
 		return &customerrors.ErrSQLExecution{Operation: "проверка использования ссылки", Cause: err}
@@ -449,6 +473,7 @@ func (r *LinkRepository) AddChatLink(ctx context.Context, chatID, linkID int64) 
 				return &customerrors.ErrLinkNotFound{URL: "ID: " + string(rune(linkID))}
 			}
 		}
+
 		return &customerrors.ErrSQLExecution{Operation: "связывание чата и ссылки", Cause: err}
 	}
 
@@ -456,11 +481,23 @@ func (r *LinkRepository) AddChatLink(ctx context.Context, chatID, linkID int64) 
 }
 
 func (r *LinkRepository) FindDue(ctx context.Context, limit, offset int) ([]*models.Link, error) {
+	var limitUint64 uint64
+
+	var offsetUint64 uint64
+
+	if limit > 0 {
+		limitUint64 = uint64(limit)
+	}
+
+	if offset > 0 {
+		offsetUint64 = uint64(offset)
+	}
+
 	selectQuery := r.sq.Select("id", "url", "type", "last_checked", "last_updated", "created_at").
 		From("links").
 		OrderBy("last_checked NULLS FIRST, id").
-		Limit(uint64(limit)).
-		Offset(uint64(offset))
+		Limit(limitUint64).
+		Offset(offsetUint64)
 
 	query, args, err := selectQuery.ToSql()
 	if err != nil {
@@ -474,6 +511,7 @@ func (r *LinkRepository) FindDue(ctx context.Context, limit, offset int) ([]*mod
 	defer rows.Close()
 
 	var links []*models.Link
+
 	for rows.Next() {
 		link := &models.Link{}
 		if err := rows.Scan(&link.ID, &link.URL, &link.Type, &link.LastChecked, &link.LastUpdated, &link.CreatedAt); err != nil {
@@ -484,12 +522,14 @@ func (r *LinkRepository) FindDue(ctx context.Context, limit, offset int) ([]*mod
 		if err != nil {
 			return nil, err
 		}
+
 		link.Tags = tags
 
 		filters, err := r.getFiltersByLinkID(ctx, link.ID)
 		if err != nil {
 			return nil, err
 		}
+
 		link.Filters = filters
 
 		links = append(links, link)
@@ -512,6 +552,7 @@ func (r *LinkRepository) Count(ctx context.Context) (int, error) {
 	}
 
 	var count int
+
 	err = r.db.Pool.QueryRow(ctx, query, args...).Scan(&count)
 	if err != nil {
 		return 0, &customerrors.ErrSQLExecution{Operation: "подсчет ссылок", Cause: err}
@@ -525,6 +566,7 @@ func (r *LinkRepository) SaveTags(ctx context.Context, linkID int64, tags []stri
 	if err != nil {
 		return &customerrors.ErrBeginTransaction{Cause: err}
 	}
+
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback(ctx)
@@ -564,6 +606,7 @@ func (r *LinkRepository) SaveFilters(ctx context.Context, linkID int64, filters 
 	if err != nil {
 		return &customerrors.ErrBeginTransaction{Cause: err}
 	}
+
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback(ctx)
@@ -615,8 +658,10 @@ func (r *LinkRepository) GetAll(ctx context.Context) ([]*models.Link, error) {
 	defer rows.Close()
 
 	links := make([]*models.Link, 0)
+
 	for rows.Next() {
 		link := &models.Link{}
+
 		err := rows.Scan(&link.ID, &link.URL, &link.Type, &link.LastChecked, &link.LastUpdated, &link.CreatedAt)
 		if err != nil {
 			return nil, &customerrors.ErrSQLExecution{Operation: "сканирование ссылки", Cause: err}
@@ -626,12 +671,14 @@ func (r *LinkRepository) GetAll(ctx context.Context) ([]*models.Link, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		link.Tags = tags
 
 		filters, err := r.getFiltersByLinkID(ctx, link.ID)
 		if err != nil {
 			return nil, err
 		}
+
 		link.Filters = filters
 
 		links = append(links, link)

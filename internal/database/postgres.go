@@ -7,10 +7,15 @@ import (
 	"time"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/config"
+	// file driver необходим для миграций базы данных.
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/jackc/pgx/v5/stdlib" // Необходим для регистрации драйвера pgx
+
+	// pgx/stdlib нужен для регистрации драйвера pgx в базе данных.
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
+
+const maxInt32 = 1<<31 - 1
 
 type PostgresDB struct {
 	Pool   *pgxpool.Pool
@@ -24,7 +29,18 @@ func NewPostgresDB(ctx context.Context, cfg *config.Config, logger *slog.Logger)
 		return nil, fmt.Errorf("ошибка при парсинге строки подключения к PostgreSQL: %w", err)
 	}
 
-	poolConfig.MaxConns = int32(cfg.DatabaseMaxConn)
+	var maxConns int32
+
+	switch {
+	case cfg.DatabaseMaxConn <= 0:
+		maxConns = 0
+	case cfg.DatabaseMaxConn >= maxInt32:
+		maxConns = maxInt32
+	default:
+		maxConns = int32(cfg.DatabaseMaxConn)
+	}
+
+	poolConfig.MaxConns = maxConns
 
 	poolConfig.ConnConfig.ConnectTimeout = 5 * time.Second
 

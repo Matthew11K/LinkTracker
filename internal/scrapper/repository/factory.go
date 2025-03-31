@@ -1,7 +1,10 @@
 package repository
 
 import (
+	"context"
 	"log/slog"
+
+	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/config"
 	"github.com/central-university-dev/go-Matthew11K/internal/database"
@@ -9,6 +12,18 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/repository/orm"
 	sqlrepo "github.com/central-university-dev/go-Matthew11K/internal/scrapper/repository/sql"
 )
+
+type GitHubDetailsRepository interface {
+	Save(ctx context.Context, details *models.GitHubDetails) error
+	FindByLinkID(ctx context.Context, linkID int64) (*models.GitHubDetails, error)
+	Update(ctx context.Context, details *models.GitHubDetails) error
+}
+
+type StackOverflowDetailsRepository interface {
+	Save(ctx context.Context, details *models.StackOverflowDetails) error
+	FindByLinkID(ctx context.Context, linkID int64) (*models.StackOverflowDetails, error)
+	Update(ctx context.Context, details *models.StackOverflowDetails) error
+}
 
 type Factory struct {
 	db     *database.PostgresDB

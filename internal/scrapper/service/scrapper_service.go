@@ -210,15 +210,15 @@ func (s *ScrapperService) GetLinks(ctx context.Context, chatID int64) ([]*models
 	return s.linkRepo.FindByChatID(ctx, chatID)
 }
 
+//nolint:funlen // Длина функции обусловлена необходимостью последовательной обработки всех этапов проверки и обновления.
 func (s *ScrapperService) ProcessLink(ctx context.Context, link *models.Link) (bool, error) {
 	updated, err := s.checkLinkUpdate(ctx, link)
 	if err != nil {
-		// Ошибка уже залогирована в checkLinkUpdate
-		return false, err // Возвращаем ошибку, чтобы планировщик знал о проблеме
+		return false, err
 	}
 
 	if !updated {
-		return false, nil // Обновлений нет
+		return false, nil
 	}
 
 	s.logger.Info("Обнаружено обновление ссылки, отправка уведомлений",
@@ -232,6 +232,7 @@ func (s *ScrapperService) ProcessLink(ctx context.Context, link *models.Link) (b
 			"error", err,
 			"linkID", link.ID,
 		)
+
 		return true, err
 	}
 
@@ -251,10 +252,12 @@ func (s *ScrapperService) ProcessLink(ctx context.Context, link *models.Link) (b
 			"error", err,
 			"linkType", link.Type,
 		)
+
 		return true, err
 	}
 
 	var updateInfo *models.UpdateInfo
+
 	updateInfo, err = updater.GetUpdateDetails(ctx, link.URL)
 	if err != nil {
 		s.logger.Error("Ошибка при получении деталей обновления",
@@ -268,6 +271,7 @@ func (s *ScrapperService) ProcessLink(ctx context.Context, link *models.Link) (b
 	}
 
 	var description string
+	//nolint:exhaustive // Unknown обрабатывается в блоке default
 	switch link.Type {
 	case models.GitHub:
 		description = "Обнаружено обновление GitHub репозитория"
@@ -290,18 +294,20 @@ func (s *ScrapperService) ProcessLink(ctx context.Context, link *models.Link) (b
 		s.logger.Error("Ошибка при отправке уведомления об обновлении",
 			"error", err,
 		)
+
 		return true, err
-	} else {
-		s.logger.Info("Уведомление об обновлении успешно отправлено",
-			"linkID", link.ID,
-			"chatsCount", len(chatIDs),
-		)
 	}
+
+	s.logger.Info("Уведомление об обновлении успешно отправлено",
+		"linkID", link.ID,
+		"chatsCount", len(chatIDs),
+	)
 
 	return true, nil
 }
 
 func (s *ScrapperService) saveDetailsToRepository(ctx context.Context, link *models.Link, info *models.UpdateInfo) {
+	//nolint:exhaustive // models.Unknown не требует сохранения деталей
 	switch link.Type {
 	case models.GitHub:
 		details := &models.GitHubDetails{
@@ -309,7 +315,7 @@ func (s *ScrapperService) saveDetailsToRepository(ctx context.Context, link *mod
 			Title:       info.Title,
 			Author:      info.Author,
 			UpdatedAt:   info.UpdatedAt,
-			Description: info.TextPreview,
+			Description: info.FullText,
 		}
 
 		existingDetails, err := s.githubRepo.FindByLinkID(ctx, link.ID)
@@ -336,7 +342,7 @@ func (s *ScrapperService) saveDetailsToRepository(ctx context.Context, link *mod
 			Title:     info.Title,
 			Author:    info.Author,
 			UpdatedAt: info.UpdatedAt,
-			Content:   info.TextPreview,
+			Content:   info.FullText,
 		}
 
 		existingDetails, err := s.stackOverflowRepo.FindByLinkID(ctx, link.ID)

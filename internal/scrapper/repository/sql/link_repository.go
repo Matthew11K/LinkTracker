@@ -25,6 +25,7 @@ func (r *LinkRepository) Save(ctx context.Context, link *models.Link) error {
 	if err != nil {
 		return fmt.Errorf("ошибка при начале транзакции: %w", err)
 	}
+
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback(ctx)
@@ -32,6 +33,7 @@ func (r *LinkRepository) Save(ctx context.Context, link *models.Link) error {
 	}()
 
 	var exists bool
+
 	err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM links WHERE url = $1)", link.URL).Scan(&exists)
 	if err != nil {
 		return fmt.Errorf("ошибка при проверке существования ссылки: %w", err)
@@ -42,9 +44,10 @@ func (r *LinkRepository) Save(ctx context.Context, link *models.Link) error {
 	}
 
 	var id int64
+
 	err = tx.QueryRow(ctx,
-		"INSERT INTO links (url, type, last_checked, last_updated, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-		link.URL, link.Type, link.LastChecked, link.LastUpdated, time.Now()).Scan(&id)
+		"INSERT INTO links (url, type, last_checked, last_updated, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at",
+		link.URL, link.Type, link.LastChecked, link.LastUpdated, time.Now()).Scan(&id, &link.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("ошибка при сохранении ссылки: %w", err)
 	}
@@ -76,6 +79,7 @@ func (r *LinkRepository) Save(ctx context.Context, link *models.Link) error {
 func (r *LinkRepository) saveTags(ctx context.Context, tx pgx.Tx, linkID int64, tags []string) error {
 	for _, tag := range tags {
 		var tagID int64
+
 		err := tx.QueryRow(ctx,
 			"INSERT INTO tags (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = $1 RETURNING id",
 			tag).Scan(&tagID)
@@ -117,6 +121,7 @@ func (r *LinkRepository) FindByID(ctx context.Context, id int64) (*models.Link, 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &customerrors.ErrLinkNotFound{URL: "ID: " + fmt.Sprint(id)}
 		}
+
 		return nil, fmt.Errorf("ошибка при поиске ссылки по ID: %w", err)
 	}
 
@@ -124,12 +129,14 @@ func (r *LinkRepository) FindByID(ctx context.Context, id int64) (*models.Link, 
 	if err != nil {
 		return nil, fmt.Errorf("ошибка при загрузке тегов: %w", err)
 	}
+
 	link.Tags = tags
 
 	filters, err := r.getFiltersByLinkID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка при загрузке фильтров: %w", err)
 	}
+
 	link.Filters = filters
 
 	return link, nil
@@ -145,11 +152,13 @@ func (r *LinkRepository) getTagsByLinkID(ctx context.Context, linkID int64) ([]s
 	defer rows.Close()
 
 	var tags []string
+
 	for rows.Next() {
 		var tag string
 		if err := rows.Scan(&tag); err != nil {
 			return nil, fmt.Errorf("ошибка при сканировании тега: %w", err)
 		}
+
 		tags = append(tags, tag)
 	}
 
@@ -170,11 +179,13 @@ func (r *LinkRepository) getFiltersByLinkID(ctx context.Context, linkID int64) (
 	defer rows.Close()
 
 	var filters []string
+
 	for rows.Next() {
 		var filter string
 		if err := rows.Scan(&filter); err != nil {
 			return nil, fmt.Errorf("ошибка при сканировании фильтра: %w", err)
 		}
+
 		filters = append(filters, filter)
 	}
 
@@ -187,11 +198,13 @@ func (r *LinkRepository) getFiltersByLinkID(ctx context.Context, linkID int64) (
 
 func (r *LinkRepository) FindByURL(ctx context.Context, url string) (*models.Link, error) {
 	var id int64
+
 	err := r.db.Pool.QueryRow(ctx, "SELECT id FROM links WHERE url = $1", url).Scan(&id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &customerrors.ErrLinkNotFound{URL: url}
 		}
+
 		return nil, fmt.Errorf("ошибка при поиске ссылки по URL: %w", err)
 	}
 
@@ -211,6 +224,7 @@ func (r *LinkRepository) FindByChatID(ctx context.Context, chatID int64) ([]*mod
 	defer rows.Close()
 
 	var links []*models.Link
+
 	for rows.Next() {
 		link := &models.Link{}
 		if err := rows.Scan(&link.ID, &link.URL, &link.Type, &link.LastChecked, &link.LastUpdated, &link.CreatedAt); err != nil {
@@ -221,12 +235,14 @@ func (r *LinkRepository) FindByChatID(ctx context.Context, chatID int64) ([]*mod
 		if err != nil {
 			return nil, err
 		}
+
 		link.Tags = tags
 
 		filters, err := r.getFiltersByLinkID(ctx, link.ID)
 		if err != nil {
 			return nil, err
 		}
+
 		link.Filters = filters
 
 		links = append(links, link)
@@ -244,6 +260,7 @@ func (r *LinkRepository) DeleteByURL(ctx context.Context, url string, chatID int
 	if err != nil {
 		return fmt.Errorf("ошибка при начале транзакции: %w", err)
 	}
+
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback(ctx)
@@ -251,11 +268,13 @@ func (r *LinkRepository) DeleteByURL(ctx context.Context, url string, chatID int
 	}()
 
 	var linkID int64
+
 	err = tx.QueryRow(ctx, "SELECT id FROM links WHERE url = $1", url).Scan(&linkID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &customerrors.ErrLinkNotFound{URL: url}
 		}
+
 		return fmt.Errorf("ошибка при поиске ссылки: %w", err)
 	}
 
@@ -271,6 +290,7 @@ func (r *LinkRepository) DeleteByURL(ctx context.Context, url string, chatID int
 	}
 
 	var count int
+
 	err = tx.QueryRow(ctx,
 		"SELECT COUNT(*) FROM chat_links WHERE link_id = $1",
 		linkID).Scan(&count)
@@ -328,6 +348,7 @@ func (r *LinkRepository) FindDue(ctx context.Context, limit, offset int) ([]*mod
 	defer rows.Close()
 
 	var links []*models.Link
+
 	for rows.Next() {
 		link := &models.Link{}
 		if err := rows.Scan(&link.ID, &link.URL, &link.Type, &link.LastChecked, &link.LastUpdated, &link.CreatedAt); err != nil {
@@ -338,12 +359,14 @@ func (r *LinkRepository) FindDue(ctx context.Context, limit, offset int) ([]*mod
 		if err != nil {
 			return nil, err
 		}
+
 		link.Tags = tags
 
 		filters, err := r.getFiltersByLinkID(ctx, link.ID)
 		if err != nil {
 			return nil, err
 		}
+
 		link.Filters = filters
 
 		links = append(links, link)
@@ -358,6 +381,7 @@ func (r *LinkRepository) FindDue(ctx context.Context, limit, offset int) ([]*mod
 
 func (r *LinkRepository) Count(ctx context.Context) (int, error) {
 	var count int
+
 	err := r.db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM links").Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("ошибка при подсчете ссылок: %w", err)
@@ -371,6 +395,7 @@ func (r *LinkRepository) SaveTags(ctx context.Context, linkID int64, tags []stri
 	if err != nil {
 		return fmt.Errorf("ошибка при начале транзакции: %w", err)
 	}
+
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback(ctx)
@@ -402,6 +427,7 @@ func (r *LinkRepository) SaveFilters(ctx context.Context, linkID int64, filters 
 	if err != nil {
 		return fmt.Errorf("ошибка при начале транзакции: %w", err)
 	}
+
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback(ctx)
@@ -437,8 +463,10 @@ func (r *LinkRepository) GetAll(ctx context.Context) ([]*models.Link, error) {
 	defer rows.Close()
 
 	links := make([]*models.Link, 0)
+
 	for rows.Next() {
 		link := &models.Link{}
+
 		err := rows.Scan(&link.ID, &link.URL, &link.Type, &link.LastChecked, &link.LastUpdated, &link.CreatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("ошибка при сканировании ссылки: %w", err)
@@ -448,12 +476,14 @@ func (r *LinkRepository) GetAll(ctx context.Context) ([]*models.Link, error) {
 		if err != nil {
 			return nil, fmt.Errorf("ошибка при загрузке тегов: %w", err)
 		}
+
 		link.Tags = tags
 
 		filters, err := r.getFiltersByLinkID(ctx, link.ID)
 		if err != nil {
 			return nil, fmt.Errorf("ошибка при загрузке фильтров: %w", err)
 		}
+
 		link.Filters = filters
 
 		links = append(links, link)

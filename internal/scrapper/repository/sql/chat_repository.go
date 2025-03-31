@@ -49,6 +49,7 @@ func (r *ChatRepository) FindByID(ctx context.Context, id int64) (*models.Chat, 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &customerrors.ErrChatNotFound{ChatID: id}
 		}
+
 		return nil, fmt.Errorf("ошибка при поиске чата: %w", err)
 	}
 
@@ -56,6 +57,7 @@ func (r *ChatRepository) FindByID(ctx context.Context, id int64) (*models.Chat, 
 	if err != nil {
 		return nil, err
 	}
+
 	chat.Links = links
 
 	return chat, nil
@@ -71,11 +73,13 @@ func (r *ChatRepository) getLinkIDs(ctx context.Context, chatID int64) ([]int64,
 	defer rows.Close()
 
 	var linkIDs []int64
+
 	for rows.Next() {
 		var linkID int64
 		if err := rows.Scan(&linkID); err != nil {
 			return nil, fmt.Errorf("ошибка при сканировании ID ссылки: %w", err)
 		}
+
 		linkIDs = append(linkIDs, linkID)
 	}
 
@@ -118,6 +122,7 @@ func (r *ChatRepository) Update(ctx context.Context, chat *models.Chat) error {
 
 func (r *ChatRepository) AddLink(ctx context.Context, chatID, linkID int64) error {
 	var exists bool
+
 	err := r.db.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM chats WHERE id = $1)", chatID).Scan(&exists)
 	if err != nil {
 		return fmt.Errorf("ошибка при проверке существования чата: %w", err)
@@ -161,6 +166,7 @@ func (r *ChatRepository) RemoveLink(ctx context.Context, chatID, linkID int64) e
 
 	if result.RowsAffected() == 0 {
 		var exists bool
+
 		err := r.db.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM chats WHERE id = $1)", chatID).Scan(&exists)
 		if err != nil {
 			return fmt.Errorf("ошибка при проверке существования чата: %w", err)
@@ -183,6 +189,7 @@ func (r *ChatRepository) RemoveLink(ctx context.Context, chatID, linkID int64) e
 
 func (r *ChatRepository) FindByLinkID(ctx context.Context, linkID int64) ([]*models.Chat, error) {
 	var exists bool
+
 	err := r.db.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM links WHERE id = $1)", linkID).Scan(&exists)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка при проверке существования ссылки: %w", err)
@@ -204,6 +211,7 @@ func (r *ChatRepository) FindByLinkID(ctx context.Context, linkID int64) ([]*mod
 	defer rows.Close()
 
 	var chats []*models.Chat
+
 	for rows.Next() {
 		chat := &models.Chat{}
 		if err := rows.Scan(&chat.ID, &chat.CreatedAt, &chat.UpdatedAt); err != nil {
@@ -214,6 +222,7 @@ func (r *ChatRepository) FindByLinkID(ctx context.Context, linkID int64) ([]*mod
 		if err != nil {
 			return nil, err
 		}
+
 		chat.Links = links
 
 		chats = append(chats, chat)
@@ -235,8 +244,10 @@ func (r *ChatRepository) GetAll(ctx context.Context) ([]*models.Chat, error) {
 	defer rows.Close()
 
 	chats := make([]*models.Chat, 0)
+
 	for rows.Next() {
 		chat := &models.Chat{}
+
 		err := rows.Scan(&chat.ID, &chat.CreatedAt, &chat.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("ошибка при сканировании чата: %w", err)
@@ -246,6 +257,7 @@ func (r *ChatRepository) GetAll(ctx context.Context) ([]*models.Chat, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		chat.Links = linkIDs
 
 		chats = append(chats, chat)

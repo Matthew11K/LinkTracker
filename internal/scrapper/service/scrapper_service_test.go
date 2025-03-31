@@ -3,9 +3,10 @@ package service_test
 import (
 	"context"
 	"errors"
-	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,32 +17,33 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/internal/common"
 	domainErrors "github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
+
 	clientmocks "github.com/central-university-dev/go-Matthew11K/internal/scrapper/clients/mocks"
-	mocks2 "github.com/central-university-dev/go-Matthew11K/internal/scrapper/repository/mocks"
+	repomocks "github.com/central-university-dev/go-Matthew11K/internal/scrapper/repository/mocks"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/service"
+	servicemocks "github.com/central-university-dev/go-Matthew11K/internal/scrapper/service/mocks"
 )
 
-type MockBotClient struct {
-	mock.Mock
-}
-
-func (m *MockBotClient) SendUpdate(ctx context.Context, update *models.LinkUpdate) error {
-	return m.Called(ctx, update).Error(0)
-}
+const (
+	testRepoURL = "https://github.com/owner/repo"
+)
 
 func TestScrapperService_AddLink(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	chatID := int64(123)
-	url := "https://github.com/owner/repo"
+	url := testRepoURL
 	tags := []string{"tag1", "tag2"}
 	filters := []string{"filter1", "filter2"}
 
-	mockLinkRepo := mocks2.NewLinkRepository(t)
-	mockChatRepo := mocks2.NewChatRepository(t)
-	mockBotClient := new(MockBotClient)
-	mockGithubClient := clientmocks.NewRepositoryUpdateGetter(t)
-	mockStackOverflowClient := clientmocks.NewQuestionUpdateGetter(t)
+	mockLinkRepo := repomocks.NewLinkRepository(t)
+	mockChatRepo := repomocks.NewChatRepository(t)
+	mockBotNotifier := servicemocks.NewBotNotifier(t)
+	mockGithubClient := clientmocks.NewGitHubClient(t)
+	mockStackOverflowClient := clientmocks.NewStackOverflowClient(t)
+	mockGithubRepo := repomocks.NewGitHubDetailsRepository(t)
+	mockStackOverflowRepo := repomocks.NewStackOverflowDetailsRepository(t)
+
 	linkAnalyzer := common.NewLinkAnalyzer()
 	updaterFactory := common.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
 
@@ -50,12 +52,12 @@ func TestScrapperService_AddLink(t *testing.T) {
 		Links:     []int64{},
 		CreatedAt: time.Now(),
 	}
-	mockChatRepo.On("FindByID", ctx, chatID).Return(mockChat, nil)
+	mockChatRepo.EXPECT().FindByID(ctx, chatID).Return(mockChat, nil)
 
 	notFoundErr := &domainErrors.ErrLinkNotFound{URL: url}
-	mockLinkRepo.On("FindByURL", ctx, url).Return(nil, notFoundErr)
+	mockLinkRepo.EXPECT().FindByURL(ctx, url).Return(nil, notFoundErr)
 
-	mockLinkRepo.On("Save", ctx, mock.MatchedBy(func(link *models.Link) bool {
+	mockLinkRepo.EXPECT().Save(ctx, mock.MatchedBy(func(link *models.Link) bool {
 		link.ID = 1
 		return link.URL == url &&
 			assert.ElementsMatch(t, tags, link.Tags) &&
@@ -63,14 +65,15 @@ func TestScrapperService_AddLink(t *testing.T) {
 			link.Type == models.GitHub
 	})).Return(nil)
 
-	mockChatRepo.On("AddLink", ctx, chatID, int64(1)).Return(nil)
-
-	mockLinkRepo.On("AddChatLink", ctx, chatID, int64(1)).Return(nil)
+	mockChatRepo.EXPECT().AddLink(ctx, chatID, int64(1)).Return(nil)
+	mockLinkRepo.EXPECT().AddChatLink(ctx, chatID, int64(1)).Return(nil)
 
 	scrapperService := service.NewScrapperService(
 		mockLinkRepo,
 		mockChatRepo,
-		mockBotClient,
+		mockBotNotifier,
+		mockGithubRepo,
+		mockStackOverflowRepo,
 		updaterFactory,
 		linkAnalyzer,
 		logger,
@@ -93,16 +96,19 @@ func TestScrapperService_AddDuplicateLink(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	chatID := int64(123)
-	url := "https://github.com/owner/repo"
+	url := testRepoURL
 	tags := []string{"tag1", "tag2"}
 	filters := []string{"filter1", "filter2"}
 	existingLinkID := int64(1)
 
-	mockLinkRepo := mocks2.NewLinkRepository(t)
-	mockChatRepo := mocks2.NewChatRepository(t)
-	mockBotClient := new(MockBotClient)
-	mockGithubClient := clientmocks.NewRepositoryUpdateGetter(t)
-	mockStackOverflowClient := clientmocks.NewQuestionUpdateGetter(t)
+	mockLinkRepo := repomocks.NewLinkRepository(t)
+	mockChatRepo := repomocks.NewChatRepository(t)
+	mockBotNotifier := servicemocks.NewBotNotifier(t)
+	mockGithubClient := clientmocks.NewGitHubClient(t)
+	mockStackOverflowClient := clientmocks.NewStackOverflowClient(t)
+	mockGithubRepo := repomocks.NewGitHubDetailsRepository(t)
+	mockStackOverflowRepo := repomocks.NewStackOverflowDetailsRepository(t)
+
 	linkAnalyzer := common.NewLinkAnalyzer()
 	updaterFactory := common.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
 
@@ -120,14 +126,15 @@ func TestScrapperService_AddDuplicateLink(t *testing.T) {
 		Links:     []int64{existingLinkID},
 		CreatedAt: time.Now(),
 	}
-	mockChatRepo.On("FindByID", ctx, chatID).Return(mockChat, nil)
-
-	mockLinkRepo.On("FindByURL", ctx, url).Return(existingLink, nil)
+	mockChatRepo.EXPECT().FindByID(ctx, chatID).Return(mockChat, nil)
+	mockLinkRepo.EXPECT().FindByURL(ctx, url).Return(existingLink, nil)
 
 	scrapperService := service.NewScrapperService(
 		mockLinkRepo,
 		mockChatRepo,
-		mockBotClient,
+		mockBotNotifier,
+		mockGithubRepo,
+		mockStackOverflowRepo,
 		updaterFactory,
 		linkAnalyzer,
 		logger,
@@ -146,372 +153,483 @@ func TestScrapperService_AddDuplicateLink(t *testing.T) {
 	mockChatRepo.AssertExpectations(t)
 }
 
-func TestScrapperService_CheckUpdates_GitHubError(t *testing.T) {
+func TestScrapperService_ProcessLink_Preview(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-	mockLinkRepo := mocks2.NewLinkRepository(t)
-	mockChatRepo := mocks2.NewChatRepository(t)
-	mockBotClient := new(MockBotClient)
-	mockGithubClient := clientmocks.NewRepositoryUpdateGetter(t)
-	mockStackOverflowClient := clientmocks.NewQuestionUpdateGetter(t)
-	linkAnalyzer := common.NewLinkAnalyzer()
-	updaterFactory := common.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
-
-	githubLink := &models.Link{
-		ID:        1,
-		URL:       "https://github.com/owner/repo",
-		Type:      models.GitHub,
-		Tags:      []string{"github"},
-		Filters:   []string{},
-		CreatedAt: time.Now(),
-	}
-
-	links := []*models.Link{githubLink}
-	mockLinkRepo.On("GetAll", ctx).Return(links, nil)
-
-	apiError := fmt.Errorf("GitHub API вернул статус: 500")
-	mockGithubClient.On("GetRepositoryLastUpdate", ctx, "owner", "repo").Return(time.Time{}, apiError)
-
-	scrapperService := service.NewScrapperService(
-		mockLinkRepo,
-		mockChatRepo,
-		mockBotClient,
-		updaterFactory,
-		linkAnalyzer,
-		logger,
-	)
-
-	err := scrapperService.CheckUpdates(ctx)
-
-	require.NoError(t, err)
-
-	mockLinkRepo.AssertExpectations(t)
-	mockGithubClient.AssertExpectations(t)
-}
-
-func TestScrapperService_CheckUpdates_StackOverflowError(t *testing.T) {
-	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-
-	mockLinkRepo := mocks2.NewLinkRepository(t)
-	mockChatRepo := mocks2.NewChatRepository(t)
-	mockBotClient := new(MockBotClient)
-	mockGithubClient := clientmocks.NewRepositoryUpdateGetter(t)
-	mockStackOverflowClient := clientmocks.NewQuestionUpdateGetter(t)
-	linkAnalyzer := common.NewLinkAnalyzer()
-	updaterFactory := common.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
-
-	stackOverflowLink := &models.Link{
-		ID:        1,
-		URL:       "https://stackoverflow.com/questions/12345",
-		Type:      models.StackOverflow,
-		Tags:      []string{"stackoverflow"},
-		Filters:   []string{},
-		CreatedAt: time.Now(),
-	}
-
-	links := []*models.Link{stackOverflowLink}
-	mockLinkRepo.On("GetAll", ctx).Return(links, nil)
-
-	apiError := fmt.Errorf("StackOverflow API вернул статус: 429 Too Many Requests")
-	mockStackOverflowClient.On("GetQuestionLastUpdate", ctx, int64(12345)).Return(time.Time{}, apiError)
-
-	scrapperService := service.NewScrapperService(
-		mockLinkRepo,
-		mockChatRepo,
-		mockBotClient,
-		updaterFactory,
-		linkAnalyzer,
-		logger,
-	)
-
-	err := scrapperService.CheckUpdates(ctx)
-
-	require.NoError(t, err)
-
-	mockLinkRepo.AssertExpectations(t)
-	mockStackOverflowClient.AssertExpectations(t)
-}
-
-func TestScrapperService_CheckUpdates_SendUpdateToSubscribedUsers(t *testing.T) {
-	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-
-	mockLinkRepo := mocks2.NewLinkRepository(t)
-	mockChatRepo := mocks2.NewChatRepository(t)
-	mockBotClient := new(MockBotClient)
-	mockGithubClient := clientmocks.NewRepositoryUpdateGetter(t)
-	mockStackOverflowClient := clientmocks.NewQuestionUpdateGetter(t)
-	linkAnalyzer := common.NewLinkAnalyzer()
-	updaterFactory := common.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
-
-	chatID1 := int64(123)
-	chatID2 := int64(456)
-
+	linkID := int64(123)
+	chatIDs := []int64{10, 20, 30}
+	longText := strings.Repeat("a", 250)
+	shortText := strings.Repeat("b", 100)
+	expectedPreviewLong := strings.Repeat("a", 200) + "..."
 	now := time.Now()
-	lastUpdate := now.Add(-time.Hour)
-	newUpdate := now
+	updateTime := now.Add(time.Minute)
+	lastCheckTime := now.Add(-time.Hour)
 
-	githubLink := &models.Link{
-		ID:          1,
-		URL:         "https://github.com/owner/repo",
-		Type:        models.GitHub,
-		Tags:        []string{"github"},
-		Filters:     []string{},
-		LastUpdated: lastUpdate,
-		CreatedAt:   now.Add(-2 * time.Hour),
-	}
+	linkAnalyzer := common.NewLinkAnalyzer()
 
-	subscribedChat := &models.Chat{
-		ID:        chatID1,
-		Links:     []int64{1},
-		CreatedAt: time.Now(),
-	}
+	t.Run("GitHub Preview Truncation", func(t *testing.T) {
+		mockLinkRepo := repomocks.NewLinkRepository(t)
+		mockChatRepo := repomocks.NewChatRepository(t)
+		mockBotNotifier := servicemocks.NewBotNotifier(t)
+		mockGithubRepo := repomocks.NewGitHubDetailsRepository(t)
+		mockStackOverflowRepo := repomocks.NewStackOverflowDetailsRepository(t)
+		mockGithubClient := clientmocks.NewGitHubClient(t)
+		updaterFactory := common.NewLinkUpdaterFactory(mockGithubClient, clientmocks.NewStackOverflowClient(t))
 
-	unsubscribedChat := &models.Chat{
-		ID:        chatID2,
-		Links:     []int64{},
-		CreatedAt: time.Now(),
-	}
+		svc := service.NewScrapperService(mockLinkRepo, mockChatRepo, mockBotNotifier, mockGithubRepo,
+			mockStackOverflowRepo, updaterFactory, linkAnalyzer, logger)
 
-	links := []*models.Link{githubLink}
-	mockLinkRepo.On("GetAll", ctx).Return(links, nil)
+		githubLink := &models.Link{
+			ID:          linkID,
+			URL:         testRepoURL,
+			Type:        models.GitHub,
+			LastUpdated: lastCheckTime,
+		}
+		mockGithubDetails := &models.GitHubDetails{
+			LinkID:      linkID,
+			Title:       "user/repo",
+			Author:      "user",
+			Description: longText,
+			UpdatedAt:   updateTime,
+		}
+		expectedUpdateInfo := &models.UpdateInfo{
+			Title:       mockGithubDetails.Title,
+			Author:      mockGithubDetails.Author,
+			UpdatedAt:   updateTime,
+			ContentType: "repository",
+			TextPreview: expectedPreviewLong,
+		}
 
-	mockGithubClient.On("GetRepositoryLastUpdate", ctx, "owner", "repo").Return(newUpdate, nil)
+		mockGithubClient.EXPECT().GetRepositoryLastUpdate(ctx, "owner", "repo").Return(updateTime, nil).Once()
+		mockGithubClient.EXPECT().GetRepositoryDetails(ctx, "owner", "repo").Return(mockGithubDetails, nil).Once()
+		mockChatRepo.EXPECT().FindByLinkID(ctx, linkID).Return([]*models.Chat{{ID: chatIDs[0]}, {ID: chatIDs[1]}, {ID: chatIDs[2]}}, nil).Once()
+		mockGithubRepo.EXPECT().FindByLinkID(ctx, linkID).Return(nil, errors.New("details not found")).Once()
+		mockGithubRepo.EXPECT().Save(ctx, mock.MatchedBy(func(details *models.GitHubDetails) bool {
+			return details.LinkID == linkID && details.Description == longText
+		})).Return(nil).Once()
 
-	mockLinkRepo.On("Update", ctx, mock.MatchedBy(func(link *models.Link) bool {
-		return link.ID == githubLink.ID && link.LastUpdated.Equal(newUpdate)
-	})).Return(nil)
+		var capturedUpdate *models.LinkUpdate
 
-	chats := []*models.Chat{subscribedChat, unsubscribedChat}
-	mockChatRepo.On("GetAll", ctx).Return(chats, nil)
+		mockBotNotifier.EXPECT().
+			SendUpdate(ctx, mock.MatchedBy(func(update *models.LinkUpdate) bool {
+				capturedUpdate = update
+				return update.ID == linkID &&
+					update.URL == githubLink.URL &&
+					len(update.TgChatIDs) == 3 &&
+					update.UpdateInfo != nil &&
+					update.UpdateInfo.TextPreview == expectedPreviewLong
+			})).
+			Return(nil).
+			Once()
 
-	mockBotClient.On("SendUpdate", ctx, mock.MatchedBy(func(update *models.LinkUpdate) bool {
-		return len(update.TgChatIDs) == 1 && update.TgChatIDs[0] == chatID1 && update.URL == githubLink.URL
-	})).Return(nil)
+		mockLinkRepo.EXPECT().Update(ctx, mock.MatchedBy(func(link *models.Link) bool {
+			return link.ID == linkID && link.LastUpdated.Equal(updateTime)
+		})).Return(nil).Once()
 
-	scrapperService := service.NewScrapperService(
-		mockLinkRepo,
-		mockChatRepo,
-		mockBotClient,
-		updaterFactory,
-		linkAnalyzer,
-		logger,
-	)
+		t.Log("--- Запуск теста для GitHub --- ")
 
-	err := scrapperService.CheckUpdates(ctx)
+		processed, err := svc.ProcessLink(ctx, githubLink)
+		require.NoError(t, err)
+		assert.True(t, processed, "Link should have been processed")
 
-	require.NoError(t, err)
+		mockLinkRepo.AssertExpectations(t)
+		mockChatRepo.AssertExpectations(t)
+		mockBotNotifier.AssertExpectations(t)
+		mockGithubRepo.AssertExpectations(t)
+		mockGithubClient.AssertExpectations(t)
+		require.NotNil(t, capturedUpdate, "Update should have been captured")
+		require.NotNil(t, capturedUpdate.UpdateInfo)
+		assert.Equal(t, expectedPreviewLong, capturedUpdate.UpdateInfo.TextPreview, "GitHub preview should be truncated to 200 chars")
+		assert.Len(t, capturedUpdate.UpdateInfo.TextPreview, 203, "GitHub preview length should be 200 + 3 ellipsis")
+		assert.Equal(t, expectedUpdateInfo.Title, capturedUpdate.UpdateInfo.Title)
+		assert.Equal(t, expectedUpdateInfo.Author, capturedUpdate.UpdateInfo.Author)
+		assert.ElementsMatch(t, chatIDs, capturedUpdate.TgChatIDs)
+	})
 
-	mockLinkRepo.AssertExpectations(t)
-	mockGithubClient.AssertExpectations(t)
-	mockBotClient.AssertExpectations(t)
-	mockChatRepo.AssertExpectations(t)
+	t.Run("StackOverflow Preview No Truncation", func(t *testing.T) {
+		mockLinkRepo := repomocks.NewLinkRepository(t)
+		mockChatRepo := repomocks.NewChatRepository(t)
+		mockBotNotifier := servicemocks.NewBotNotifier(t)
+		mockGithubRepo := repomocks.NewGitHubDetailsRepository(t)
+		mockStackOverflowRepo := repomocks.NewStackOverflowDetailsRepository(t)
+		mockStackOverflowClient := clientmocks.NewStackOverflowClient(t)
+		updaterFactory := common.NewLinkUpdaterFactory(clientmocks.NewGitHubClient(t), mockStackOverflowClient)
+
+		svc := service.NewScrapperService(mockLinkRepo, mockChatRepo, mockBotNotifier, mockGithubRepo,
+			mockStackOverflowRepo, updaterFactory, linkAnalyzer, logger)
+
+		soLink := &models.Link{
+			ID:          linkID,
+			URL:         "https://stackoverflow.com/questions/12345/title",
+			Type:        models.StackOverflow,
+			LastUpdated: lastCheckTime,
+		}
+		mockSODetails := &models.StackOverflowDetails{
+			LinkID:    linkID,
+			Title:     "StackOverflow Question Title",
+			Author:    "so_user",
+			Content:   shortText,
+			UpdatedAt: updateTime,
+		}
+		expectedUpdateInfo := &models.UpdateInfo{
+			Title:       mockSODetails.Title,
+			Author:      mockSODetails.Author,
+			UpdatedAt:   updateTime,
+			ContentType: "question",
+			TextPreview: shortText,
+		}
+
+		mockStackOverflowClient.EXPECT().GetQuestionLastUpdate(ctx, int64(12345)).Return(updateTime, nil).Once()
+		mockStackOverflowClient.EXPECT().GetQuestionDetails(ctx, int64(12345)).Return(mockSODetails, nil).Once()
+		mockChatRepo.EXPECT().FindByLinkID(ctx, linkID).Return([]*models.Chat{{ID: chatIDs[0]}}, nil).Once()
+		mockStackOverflowRepo.EXPECT().FindByLinkID(ctx, linkID).Return(nil, errors.New("details not found")).Once()
+		mockStackOverflowRepo.EXPECT().Save(ctx, mock.MatchedBy(func(details *models.StackOverflowDetails) bool {
+			return details.LinkID == linkID && details.Content == shortText
+		})).Return(nil).Once()
+
+		var capturedUpdate *models.LinkUpdate
+
+		mockBotNotifier.EXPECT().
+			SendUpdate(ctx, mock.MatchedBy(func(update *models.LinkUpdate) bool {
+				capturedUpdate = update
+				return update.ID == linkID &&
+					len(update.TgChatIDs) == 1 &&
+					update.UpdateInfo != nil &&
+					update.UpdateInfo.TextPreview == shortText
+			})).
+			Return(nil).
+			Once()
+
+		mockLinkRepo.EXPECT().Update(ctx, mock.MatchedBy(func(link *models.Link) bool {
+			return link.ID == linkID && link.LastUpdated.Equal(updateTime)
+		})).Return(nil).Once()
+
+		t.Log("--- Запуск теста для StackOverflow --- ")
+
+		processed, err := svc.ProcessLink(ctx, soLink)
+		require.NoError(t, err)
+		assert.True(t, processed, "Link should have been processed")
+
+		mockLinkRepo.AssertExpectations(t)
+		mockChatRepo.AssertExpectations(t)
+		mockBotNotifier.AssertExpectations(t)
+		mockStackOverflowRepo.AssertExpectations(t)
+		mockStackOverflowClient.AssertExpectations(t)
+		require.NotNil(t, capturedUpdate, "Update should have been captured")
+		require.NotNil(t, capturedUpdate.UpdateInfo)
+		assert.Equal(t, shortText, capturedUpdate.UpdateInfo.TextPreview, "StackOverflow preview should NOT be truncated")
+		assert.Len(t, capturedUpdate.UpdateInfo.TextPreview, len(shortText), "StackOverflow preview length should match original short text")
+		assert.Equal(t, expectedUpdateInfo.Title, capturedUpdate.UpdateInfo.Title)
+		assert.Equal(t, expectedUpdateInfo.Author, capturedUpdate.UpdateInfo.Author)
+		assert.ElementsMatch(t, []int64{chatIDs[0]}, capturedUpdate.TgChatIDs)
+	})
 }
 
-func TestScrapperService_GitHub_HTTP_Errors(t *testing.T) {
+func TestScrapperService_ProcessLink_Scenarios(t *testing.T) {
+	linkID := int64(1)
 	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	updatedAt := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	lastChecked := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	mockLinkRepo := mocks2.NewLinkRepository(t)
-	mockChatRepo := mocks2.NewChatRepository(t)
-	mockBotClient := new(MockBotClient)
-	mockGithubClient := clientmocks.NewRepositoryUpdateGetter(t)
-	mockStackOverflowClient := clientmocks.NewQuestionUpdateGetter(t)
-	linkAnalyzer := common.NewLinkAnalyzer()
-	updaterFactory := common.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
-
-	githubLink := &models.Link{
-		ID:        1,
-		URL:       "https://github.com/owner/repo",
-		Type:      models.GitHub,
-		Tags:      []string{"github"},
-		Filters:   []string{},
-		CreatedAt: time.Now(),
+	mockGithubDetails := &models.GitHubDetails{
+		LinkID:      linkID,
+		Description: "Repo description",
+		Title:       "Repo title",
+		Author:      "Repo author",
 	}
 
-	httpErrors := []struct {
-		statusCode int
-		errorMsg   string
-	}{
-		{400, "Bad Request"},
-		{401, "Unauthorized"},
-		{403, "Forbidden"},
-		{404, "Not Found"},
-		{429, "Too Many Requests"},
-		{500, "Internal Server Error"},
-		{503, "Service Unavailable"},
+	mockChatInfos := []*models.Chat{
+		{ID: 123},
+		{ID: 456},
+		{ID: 789},
 	}
 
-	for _, httpErr := range httpErrors {
-		t.Run(fmt.Sprintf("GitHub_HTTP_%d", httpErr.statusCode), func(t *testing.T) {
-			mockLinkRepo.On("GetAll", ctx).Return([]*models.Link{githubLink}, nil).Once()
+	linkAnalyzer := &common.LinkAnalyzer{}
 
-			apiError := fmt.Errorf("GitHub API вернул статус: %d %s", httpErr.statusCode, httpErr.errorMsg)
-			mockGithubClient.On("GetRepositoryLastUpdate", ctx, "owner", "repo").Return(time.Time{}, apiError).Once()
+	t.Run("ChatRepo_FindByLinkID_Error", func(t *testing.T) {
+		mockLinkRepo := repomocks.NewLinkRepository(t)
+		mockLinkRepo.ExpectedCalls = nil
 
-			scrapperService := service.NewScrapperService(
-				mockLinkRepo,
-				mockChatRepo,
-				mockBotClient,
-				updaterFactory,
-				linkAnalyzer,
-				logger,
-			)
+		mockChatRepo := repomocks.NewChatRepository(t)
+		mockBotNotifier := servicemocks.NewBotNotifier(t)
+		mockGithubRepo := repomocks.NewGitHubDetailsRepository(t)
+		mockStackOverflowRepo := repomocks.NewStackOverflowDetailsRepository(t)
+		mockGithubClient := clientmocks.NewGitHubClient(t)
 
-			err := scrapperService.CheckUpdates(ctx)
+		mockStackOverflowClient := clientmocks.NewStackOverflowClient(t)
+		updaterFactory := common.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
 
-			require.NoError(t, err)
+		svc := service.NewScrapperService(
+			mockLinkRepo, mockChatRepo, mockBotNotifier,
+			mockGithubRepo, mockStackOverflowRepo,
+			updaterFactory, linkAnalyzer, logger,
+		)
 
-			mockLinkRepo.AssertExpectations(t)
-			mockGithubClient.AssertExpectations(t)
-		})
-	}
+		githubLink := &models.Link{
+			ID:          linkID,
+			URL:         testRepoURL,
+			Type:        models.GitHub,
+			LastChecked: lastChecked,
+		}
+
+		mockGithubClient.EXPECT().GetRepositoryLastUpdate(ctx, "owner", "repo").Return(updatedAt, nil).Once()
+
+		expectedErr := errors.New("db error on find chats")
+		mockChatRepo.EXPECT().FindByLinkID(ctx, linkID).Return(nil, expectedErr).Once()
+
+		mockLinkRepo.On("Update", ctx, mock.AnythingOfType("*models.Link")).Return(nil)
+
+		processed, err := svc.ProcessLink(ctx, githubLink)
+
+		assert.True(t, processed, "Link should be processed even when ChatRepo.FindByLinkID returns error")
+		assert.Error(t, err, "Error should be propagated")
+		assert.ErrorContains(t, err, expectedErr.Error())
+	})
+
+	t.Run("GetUpdateDetails_Error", func(t *testing.T) {
+		mockLinkRepo := repomocks.NewLinkRepository(t)
+		mockLinkRepo.ExpectedCalls = nil
+
+		mockChatRepo := repomocks.NewChatRepository(t)
+		mockBotNotifier := servicemocks.NewBotNotifier(t)
+		mockGithubRepo := repomocks.NewGitHubDetailsRepository(t)
+		mockStackOverflowRepo := repomocks.NewStackOverflowDetailsRepository(t)
+		mockGithubClient := clientmocks.NewGitHubClient(t)
+
+		mockStackOverflowClient := clientmocks.NewStackOverflowClient(t)
+		updaterFactory := common.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
+
+		svc := service.NewScrapperService(
+			mockLinkRepo, mockChatRepo, mockBotNotifier,
+			mockGithubRepo, mockStackOverflowRepo,
+			updaterFactory, linkAnalyzer, logger,
+		)
+
+		githubLink := &models.Link{
+			ID:          linkID,
+			URL:         testRepoURL,
+			Type:        models.GitHub,
+			LastChecked: lastChecked,
+		}
+
+		mockGithubClient.EXPECT().GetRepositoryLastUpdate(ctx, "owner", "repo").Return(updatedAt, nil).Once()
+
+		expectedErr := errors.New("github API error on get details")
+		mockGithubClient.EXPECT().GetRepositoryDetails(ctx, "owner", "repo").Return(nil, expectedErr).Once()
+
+		mockChatRepo.EXPECT().FindByLinkID(ctx, linkID).Return(mockChatInfos, nil).Once()
+
+		mockBotNotifier.EXPECT().SendUpdate(ctx, mock.AnythingOfType("*models.LinkUpdate")).Return(nil).Once()
+
+		mockLinkRepo.On("Update", ctx, mock.AnythingOfType("*models.Link")).Return(nil)
+
+		processed, err := svc.ProcessLink(ctx, githubLink)
+
+		assert.True(t, processed, "Link should be processed despite GetRepositoryDetails error")
+		assert.NoError(t, err, "No error should be propagated")
+	})
+
+	t.Run("DetailsRepo_Save_Error", func(t *testing.T) {
+		mockLinkRepo := repomocks.NewLinkRepository(t)
+		mockLinkRepo.ExpectedCalls = nil
+
+		mockChatRepo := repomocks.NewChatRepository(t)
+		mockBotNotifier := servicemocks.NewBotNotifier(t)
+		mockGithubRepo := repomocks.NewGitHubDetailsRepository(t)
+		mockStackOverflowRepo := repomocks.NewStackOverflowDetailsRepository(t)
+		mockGithubClient := clientmocks.NewGitHubClient(t)
+
+		mockStackOverflowClient := clientmocks.NewStackOverflowClient(t)
+		updaterFactory := common.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
+
+		svc := service.NewScrapperService(
+			mockLinkRepo, mockChatRepo, mockBotNotifier,
+			mockGithubRepo, mockStackOverflowRepo,
+			updaterFactory, linkAnalyzer, logger,
+		)
+
+		githubLink := &models.Link{
+			ID:          linkID,
+			URL:         testRepoURL,
+			Type:        models.GitHub,
+			LastChecked: lastChecked,
+		}
+
+		mockGithubClient.EXPECT().GetRepositoryLastUpdate(ctx, "owner", "repo").Return(updatedAt, nil).Once()
+
+		mockGithubClient.EXPECT().GetRepositoryDetails(ctx, "owner", "repo").Return(mockGithubDetails, nil).Once()
+
+		mockChatRepo.EXPECT().FindByLinkID(ctx, linkID).Return(mockChatInfos, nil).Once()
+
+		mockGithubRepo.EXPECT().FindByLinkID(ctx, linkID).Return(nil, errors.New("not found")).Once()
+
+		expectedErr := errors.New("db error on save details")
+		mockGithubRepo.EXPECT().Save(ctx, mock.MatchedBy(func(details *models.GitHubDetails) bool {
+			return details.LinkID == linkID && details.Description == mockGithubDetails.Description
+		})).Return(expectedErr).Once()
+
+		mockBotNotifier.EXPECT().SendUpdate(ctx, mock.AnythingOfType("*models.LinkUpdate")).Return(nil).Once()
+
+		mockLinkRepo.On("Update", ctx, mock.AnythingOfType("*models.Link")).Return(nil)
+
+		processed, err := svc.ProcessLink(ctx, githubLink)
+
+		assert.True(t, processed, "Link should be processed despite GitHubDetailsRepo.Save error")
+		assert.NoError(t, err, "No error should be propagated")
+	})
+
+	t.Run("No_Update_Found", func(t *testing.T) {
+		mockLinkRepo := repomocks.NewLinkRepository(t)
+		mockLinkRepo.ExpectedCalls = nil
+
+		mockChatRepo := repomocks.NewChatRepository(t)
+		mockBotNotifier := servicemocks.NewBotNotifier(t)
+		mockGithubRepo := repomocks.NewGitHubDetailsRepository(t)
+		mockStackOverflowRepo := repomocks.NewStackOverflowDetailsRepository(t)
+		mockGithubClient := clientmocks.NewGitHubClient(t)
+
+		mockStackOverflowClient := clientmocks.NewStackOverflowClient(t)
+		updaterFactory := common.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
+
+		svc := service.NewScrapperService(
+			mockLinkRepo, mockChatRepo, mockBotNotifier,
+			mockGithubRepo, mockStackOverflowRepo,
+			updaterFactory, linkAnalyzer, logger,
+		)
+
+		githubLink := &models.Link{
+			ID:          linkID,
+			URL:         testRepoURL,
+			Type:        models.GitHub,
+			LastChecked: updatedAt,
+			LastUpdated: updatedAt,
+		}
+
+		mockGithubClient.EXPECT().GetRepositoryLastUpdate(ctx, "owner", "repo").Return(updatedAt, nil).Once()
+
+		mockLinkRepo.On("Update", ctx, mock.AnythingOfType("*models.Link")).Return(nil)
+
+		processed, err := svc.ProcessLink(ctx, githubLink)
+
+		assert.False(t, processed, "Link should not be processed when no update is found")
+		assert.NoError(t, err, "No error should be returned")
+	})
 }
 
-func TestScrapperService_StackOverflow_HTTP_Errors(t *testing.T) {
+func TestScrapperService_RemoveLink(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	chatID := int64(123)
+	url := testRepoURL
+	linkID := int64(1)
 
-	mockLinkRepo := mocks2.NewLinkRepository(t)
-	mockChatRepo := mocks2.NewChatRepository(t)
-	mockBotClient := new(MockBotClient)
-	mockGithubClient := clientmocks.NewRepositoryUpdateGetter(t)
-	mockStackOverflowClient := clientmocks.NewQuestionUpdateGetter(t)
-	linkAnalyzer := common.NewLinkAnalyzer()
-	updaterFactory := common.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
+	t.Run("Success", func(t *testing.T) {
+		mockLinkRepo := repomocks.NewLinkRepository(t)
+		mockChatRepo := repomocks.NewChatRepository(t)
+		mockBotNotifier := servicemocks.NewBotNotifier(t)
+		mockGithubRepo := repomocks.NewGitHubDetailsRepository(t)
+		mockStackOverflowRepo := repomocks.NewStackOverflowDetailsRepository(t)
+		mockGithubClient := clientmocks.NewGitHubClient(t)
+		mockStackOverflowClient := clientmocks.NewStackOverflowClient(t)
+		linkAnalyzer := common.NewLinkAnalyzer()
+		updaterFactory := common.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
+		svc := service.NewScrapperService(mockLinkRepo, mockChatRepo, mockBotNotifier, mockGithubRepo,
+			mockStackOverflowRepo, updaterFactory, linkAnalyzer, logger)
 
-	stackOverflowLink := &models.Link{
-		ID:        1,
-		URL:       "https://stackoverflow.com/questions/12345",
-		Type:      models.StackOverflow,
-		Tags:      []string{"stackoverflow"},
-		Filters:   []string{},
-		CreatedAt: time.Now(),
-	}
+		existingLink := &models.Link{ID: linkID, URL: url, Type: models.GitHub}
+		mockChat := &models.Chat{ID: chatID, Links: []int64{linkID}}
 
-	httpErrors := []struct {
-		statusCode int
-		errorMsg   string
-	}{
-		{400, "Bad Request"},
-		{401, "Unauthorized"},
-		{403, "Forbidden"},
-		{404, "Not Found"},
-		{429, "Too Many Requests"},
-		{500, "Internal Server Error"},
-		{503, "Service Unavailable"},
-	}
+		mockChatRepo.EXPECT().FindByID(ctx, chatID).Return(mockChat, nil).Once()
+		mockLinkRepo.EXPECT().FindByURL(ctx, url).Return(existingLink, nil).Once()
+		mockLinkRepo.EXPECT().DeleteByURL(ctx, url, chatID).Return(nil).Once()
 
-	for _, httpErr := range httpErrors {
-		t.Run(fmt.Sprintf("StackOverflow_HTTP_%d", httpErr.statusCode), func(t *testing.T) {
-			mockLinkRepo.On("GetAll", ctx).Return([]*models.Link{stackOverflowLink}, nil).Once()
+		link, err := svc.RemoveLink(ctx, chatID, url)
 
-			apiError := fmt.Errorf("StackOverflow API вернул статус: %d %s", httpErr.statusCode, httpErr.errorMsg)
-			mockStackOverflowClient.On("GetQuestionLastUpdate", ctx, int64(12345)).Return(time.Time{}, apiError).Once()
+		require.NoError(t, err)
+		require.NotNil(t, link)
+		assert.Equal(t, linkID, link.ID)
+		mockChatRepo.AssertExpectations(t)
+		mockLinkRepo.AssertExpectations(t)
+	})
 
-			scrapperService := service.NewScrapperService(
-				mockLinkRepo,
-				mockChatRepo,
-				mockBotClient,
-				updaterFactory,
-				linkAnalyzer,
-				logger,
-			)
+	t.Run("Chat Not Found", func(t *testing.T) {
+		mockLinkRepo := repomocks.NewLinkRepository(t)
+		mockChatRepo := repomocks.NewChatRepository(t)
+		svc := service.NewScrapperService(mockLinkRepo, mockChatRepo, nil, nil, nil, nil, nil, logger)
+		expectedErr := &domainErrors.ErrChatNotFound{}
 
-			err := scrapperService.CheckUpdates(ctx)
+		mockChatRepo.EXPECT().FindByID(ctx, chatID).Return(nil, expectedErr).Once()
 
-			require.NoError(t, err)
+		link, err := svc.RemoveLink(ctx, chatID, url)
 
-			mockLinkRepo.AssertExpectations(t)
-			mockStackOverflowClient.AssertExpectations(t)
-		})
-	}
-}
+		require.Error(t, err)
+		assert.ErrorIs(t, err, expectedErr)
+		assert.Nil(t, link)
+		mockChatRepo.AssertExpectations(t)
+		mockLinkRepo.AssertNotCalled(t, "FindByURL")
+	})
 
-func TestScrapperService_GitHub_InvalidJSON(t *testing.T) {
-	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	t.Run("Link Not Found", func(t *testing.T) {
+		mockLinkRepo := repomocks.NewLinkRepository(t)
+		mockChatRepo := repomocks.NewChatRepository(t)
+		svc := service.NewScrapperService(mockLinkRepo, mockChatRepo, nil, nil, nil, nil, nil, logger)
+		mockChat := &models.Chat{ID: chatID}
+		expectedErr := &domainErrors.ErrLinkNotFound{URL: url}
 
-	mockLinkRepo := mocks2.NewLinkRepository(t)
-	mockChatRepo := mocks2.NewChatRepository(t)
-	mockBotClient := new(MockBotClient)
-	mockGithubClient := clientmocks.NewRepositoryUpdateGetter(t)
-	mockStackOverflowClient := clientmocks.NewQuestionUpdateGetter(t)
-	linkAnalyzer := common.NewLinkAnalyzer()
-	updaterFactory := common.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
+		mockChatRepo.EXPECT().FindByID(ctx, chatID).Return(mockChat, nil).Once()
+		mockLinkRepo.EXPECT().FindByURL(ctx, url).Return(nil, expectedErr).Once()
 
-	githubLink := &models.Link{
-		ID:        1,
-		URL:       "https://github.com/owner/repo",
-		Type:      models.GitHub,
-		Tags:      []string{"github"},
-		Filters:   []string{},
-		CreatedAt: time.Now(),
-	}
+		link, err := svc.RemoveLink(ctx, chatID, url)
 
-	mockLinkRepo.On("GetAll", ctx).Return([]*models.Link{githubLink}, nil)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, expectedErr)
+		assert.Nil(t, link)
+		mockChatRepo.AssertExpectations(t)
+		mockLinkRepo.AssertExpectations(t)
+		mockLinkRepo.AssertNotCalled(t, "DeleteByURL")
+	})
 
-	jsonError := fmt.Errorf("ошибка при декодировании JSON: unexpected EOF")
-	mockGithubClient.On("GetRepositoryLastUpdate", ctx, "owner", "repo").Return(time.Time{}, jsonError)
+	t.Run("Chat Not Tracking Link", func(t *testing.T) {
+		mockLinkRepo := repomocks.NewLinkRepository(t)
+		mockChatRepo := repomocks.NewChatRepository(t)
+		svc := service.NewScrapperService(mockLinkRepo, mockChatRepo, nil, nil, nil, nil, nil, logger)
+		existingLink := &models.Link{ID: linkID, URL: url, Type: models.GitHub}
+		mockChat := &models.Chat{ID: chatID, Links: []int64{999}}
+		expectedErr := errors.New("chat not tracking link")
 
-	scrapperService := service.NewScrapperService(
-		mockLinkRepo,
-		mockChatRepo,
-		mockBotClient,
-		updaterFactory,
-		linkAnalyzer,
-		logger,
-	)
+		mockChatRepo.EXPECT().FindByID(ctx, chatID).Return(mockChat, nil).Once()
+		mockLinkRepo.EXPECT().FindByURL(ctx, url).Return(existingLink, nil).Once()
+		mockLinkRepo.EXPECT().DeleteByURL(ctx, url, chatID).Return(expectedErr).Once()
 
-	err := scrapperService.CheckUpdates(ctx)
+		link, err := svc.RemoveLink(ctx, chatID, url)
 
-	require.NoError(t, err)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "chat not tracking link")
+		assert.Nil(t, link)
+		mockChatRepo.AssertExpectations(t)
+		mockLinkRepo.AssertExpectations(t)
+	})
 
-	mockLinkRepo.AssertExpectations(t)
-	mockGithubClient.AssertExpectations(t)
-}
+	t.Run("Link Tracked By Others (RemoveLink only)", func(t *testing.T) {
+		mockLinkRepo := repomocks.NewLinkRepository(t)
+		mockChatRepo := repomocks.NewChatRepository(t)
+		svc := service.NewScrapperService(mockLinkRepo, mockChatRepo, nil, nil, nil, nil, nil, logger)
+		existingLink := &models.Link{ID: linkID, URL: url, Type: models.GitHub}
+		mockChat := &models.Chat{ID: chatID, Links: []int64{linkID}}
 
-func TestScrapperService_StackOverflow_InvalidJSON(t *testing.T) {
-	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+		mockChatRepo.EXPECT().FindByID(ctx, chatID).Return(mockChat, nil).Once()
+		mockLinkRepo.EXPECT().FindByURL(ctx, url).Return(existingLink, nil).Once()
+		mockLinkRepo.EXPECT().DeleteByURL(ctx, url, chatID).Return(nil).Once()
 
-	mockLinkRepo := mocks2.NewLinkRepository(t)
-	mockChatRepo := mocks2.NewChatRepository(t)
-	mockBotClient := new(MockBotClient)
-	mockGithubClient := clientmocks.NewRepositoryUpdateGetter(t)
-	mockStackOverflowClient := clientmocks.NewQuestionUpdateGetter(t)
-	linkAnalyzer := common.NewLinkAnalyzer()
-	updaterFactory := common.NewLinkUpdaterFactory(mockGithubClient, mockStackOverflowClient)
+		link, err := svc.RemoveLink(ctx, chatID, url)
 
-	stackOverflowLink := &models.Link{
-		ID:        1,
-		URL:       "https://stackoverflow.com/questions/12345",
-		Type:      models.StackOverflow,
-		Tags:      []string{"stackoverflow"},
-		Filters:   []string{},
-		CreatedAt: time.Now(),
-	}
-
-	mockLinkRepo.On("GetAll", ctx).Return([]*models.Link{stackOverflowLink}, nil)
-
-	jsonError := fmt.Errorf("ошибка при декодировании JSON: invalid character '}' after object key")
-	mockStackOverflowClient.On("GetQuestionLastUpdate", ctx, int64(12345)).Return(time.Time{}, jsonError)
-
-	scrapperService := service.NewScrapperService(
-		mockLinkRepo,
-		mockChatRepo,
-		mockBotClient,
-		updaterFactory,
-		linkAnalyzer,
-		logger,
-	)
-
-	err := scrapperService.CheckUpdates(ctx)
-
-	require.NoError(t, err)
-
-	mockLinkRepo.AssertExpectations(t)
-	mockStackOverflowClient.AssertExpectations(t)
+		require.NoError(t, err)
+		require.NotNil(t, link)
+		assert.Equal(t, linkID, link.ID)
+		mockChatRepo.AssertExpectations(t)
+		mockLinkRepo.AssertExpectations(t)
+		mockChatRepo.AssertNotCalled(t, "FindByLinkID", mock.Anything, linkID)
+	})
 }

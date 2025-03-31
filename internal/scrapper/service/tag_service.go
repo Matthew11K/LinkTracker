@@ -24,7 +24,7 @@ func NewTagService(linkRepo repository.LinkRepository, chatRepo repository.ChatR
 	}
 }
 
-func (s *TagService) AddTagToLink(ctx context.Context, chatID int64, url string, tag string) error {
+func (s *TagService) AddTagToLink(ctx context.Context, chatID int64, url, tag string) error {
 	chat, err := s.chatRepo.FindByID(ctx, chatID)
 	if err != nil {
 		return err
@@ -36,6 +36,7 @@ func (s *TagService) AddTagToLink(ctx context.Context, chatID int64, url string,
 	}
 
 	linkFound := false
+
 	for _, linkID := range chat.Links {
 		if linkID == link.ID {
 			linkFound = true
@@ -68,7 +69,7 @@ func (s *TagService) AddTagToLink(ctx context.Context, chatID int64, url string,
 	return nil
 }
 
-func (s *TagService) RemoveTagFromLink(ctx context.Context, chatID int64, url string, tag string) error {
+func (s *TagService) RemoveTagFromLink(ctx context.Context, chatID int64, url, tag string) error {
 	chat, err := s.chatRepo.FindByID(ctx, chatID)
 	if err != nil {
 		return err
@@ -80,6 +81,7 @@ func (s *TagService) RemoveTagFromLink(ctx context.Context, chatID int64, url st
 	}
 
 	linkFound := false
+
 	for _, linkID := range chat.Links {
 		if linkID == link.ID {
 			linkFound = true
@@ -93,11 +95,13 @@ func (s *TagService) RemoveTagFromLink(ctx context.Context, chatID int64, url st
 
 	tagFound := false
 	newTags := make([]string, 0, len(link.Tags))
+
 	for _, existingTag := range link.Tags {
 		if existingTag == tag {
 			tagFound = true
 			continue
 		}
+
 		newTags = append(newTags, existingTag)
 	}
 
@@ -132,6 +136,7 @@ func (s *TagService) GetLinksByTag(ctx context.Context, chatID int64, tag string
 	}
 
 	result := make([]*models.Link, 0)
+
 	for _, link := range links {
 		for _, linkTag := range link.Tags {
 			if linkTag == tag {
@@ -156,6 +161,7 @@ func (s *TagService) GetAllTags(ctx context.Context, chatID int64) ([]string, er
 	}
 
 	tagMap := make(map[string]struct{})
+
 	for _, link := range links {
 		for _, tag := range link.Tags {
 			tagMap[tag] = struct{}{}

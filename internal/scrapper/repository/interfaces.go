@@ -31,15 +31,3 @@ type ChatRepository interface {
 	FindByLinkID(ctx context.Context, linkID int64) ([]*models.Chat, error)
 	GetAll(ctx context.Context) ([]*models.Chat, error)
 }
-
-type GitHubDetailsRepository interface {
-	Save(ctx context.Context, details *models.GitHubDetails) error
-	FindByLinkID(ctx context.Context, linkID int64) (*models.GitHubDetails, error)
-	Update(ctx context.Context, details *models.GitHubDetails) error
-}
-
-type StackOverflowDetailsRepository interface {
-	Save(ctx context.Context, details *models.StackOverflowDetails) error
-	FindByLinkID(ctx context.Context, linkID int64) (*models.StackOverflowDetails, error)
-	Update(ctx context.Context, details *models.StackOverflowDetails) error
-}

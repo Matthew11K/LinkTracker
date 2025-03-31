@@ -29,6 +29,7 @@ func (r *ChatRepository) Save(ctx context.Context, chat *models.Chat) error {
 	if err != nil {
 		return &customerrors.ErrBeginTransaction{Cause: err}
 	}
+
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback(ctx)
@@ -39,55 +40,74 @@ func (r *ChatRepository) Save(ctx context.Context, chat *models.Chat) error {
 	if chat.CreatedAt.IsZero() {
 		chat.CreatedAt = now
 	}
+
 	if chat.UpdatedAt.IsZero() {
 		chat.UpdatedAt = now
 	}
 
 	existsQuery := r.sq.Select("1").From("chats").Where(sq.Eq{"id": chat.ID}).Limit(1)
+
 	query, args, err := existsQuery.ToSql()
 	if err != nil {
 		return &customerrors.ErrBuildSQLQuery{Operation: "проверка существования чата", Cause: err}
 	}
 
 	var exists bool
+
 	err = tx.QueryRow(ctx, "SELECT EXISTS("+query+")", args...).Scan(&exists)
 	if err != nil {
 		return &customerrors.ErrSQLExecution{Operation: "проверка существования чата", Cause: err}
 	}
 
 	if exists {
-		updateQuery := r.sq.Update("chats").
-			Set("updated_at", chat.UpdatedAt).
-			Where(sq.Eq{"id": chat.ID})
-
-		query, args, err = updateQuery.ToSql()
-		if err != nil {
-			return &customerrors.ErrBuildSQLQuery{Operation: "обновление чата", Cause: err}
-		}
-
-		_, err = tx.Exec(ctx, query, args...)
-		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "обновление чата", Cause: err}
-		}
+		err = r.updateExistingChat(ctx, tx, chat)
 	} else {
-		insertQuery := r.sq.Insert("chats").
-			Columns("id", "created_at", "updated_at").
-			Values(chat.ID, chat.CreatedAt, chat.UpdatedAt)
+		err = r.insertNewChat(ctx, tx, chat)
+	}
 
-		query, args, err = insertQuery.ToSql()
-		if err != nil {
-			return &customerrors.ErrBuildSQLQuery{Operation: "вставка чата", Cause: err}
-		}
-
-		_, err = tx.Exec(ctx, query, args...)
-		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "сохранение чата", Cause: err}
-		}
+	if err != nil {
+		return err
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
 		return &customerrors.ErrCommitTransaction{Cause: err}
+	}
+
+	return nil
+}
+
+func (r *ChatRepository) updateExistingChat(ctx context.Context, tx pgx.Tx, chat *models.Chat) error {
+	updateQuery := r.sq.Update("chats").
+		Set("updated_at", chat.UpdatedAt).
+		Where(sq.Eq{"id": chat.ID})
+
+	query, args, err := updateQuery.ToSql()
+	if err != nil {
+		return &customerrors.ErrBuildSQLQuery{Operation: "обновление чата", Cause: err}
+	}
+
+	_, err = tx.Exec(ctx, query, args...)
+	if err != nil {
+		return &customerrors.ErrSQLExecution{Operation: "обновление чата", Cause: err}
+	}
+
+	return nil
+}
+
+func (r *ChatRepository) insertNewChat(ctx context.Context, tx pgx.Tx, chat *models.Chat) error {
+	insertQuery := r.sq.Insert("chats").
+		Columns("id", "created_at", "updated_at").
+		Values(chat.ID, chat.CreatedAt, chat.UpdatedAt)
+
+	query, args, err := insertQuery.ToSql()
+	if err != nil {
+		return &customerrors.ErrBuildSQLQuery{Operation: "вставка чата", Cause: err}
+	}
+
+	_, err = tx.Exec(ctx, query, args...)
+	if err != nil {
+		return &customerrors.ErrSQLExecution{Operation: "сохранение чата", Cause: err}
 	}
 
 	return nil
@@ -104,12 +124,14 @@ func (r *ChatRepository) FindByID(ctx context.Context, id int64) (*models.Chat, 
 	}
 
 	chat := &models.Chat{ID: id}
+
 	err = r.db.Pool.QueryRow(ctx, query, args...).
 		Scan(&chat.CreatedAt, &chat.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &customerrors.ErrChatNotFound{ChatID: id}
 		}
+
 		return nil, &customerrors.ErrSQLExecution{Operation: "поиск чата по ID", Cause: err}
 	}
 
@@ -117,6 +139,7 @@ func (r *ChatRepository) FindByID(ctx context.Context, id int64) (*models.Chat, 
 	if err != nil {
 		return nil, err
 	}
+
 	chat.Links = linkIDs
 
 	return chat, nil
@@ -139,11 +162,13 @@ func (r *ChatRepository) getLinkIDs(ctx context.Context, chatID int64) ([]int64,
 	defer rows.Close()
 
 	var linkIDs []int64
+
 	for rows.Next() {
 		var linkID int64
 		if err := rows.Scan(&linkID); err != nil {
 			return nil, &customerrors.ErrSQLScan{Entity: "ID ссылки", Cause: err}
 		}
+
 		linkIDs = append(linkIDs, linkID)
 	}
 
@@ -156,12 +181,14 @@ func (r *ChatRepository) getLinkIDs(ctx context.Context, chatID int64) ([]int64,
 
 func (r *ChatRepository) Delete(ctx context.Context, id int64) error {
 	existsQuery := r.sq.Select("1").From("chats").Where(sq.Eq{"id": id}).Limit(1)
+
 	query, args, err := existsQuery.ToSql()
 	if err != nil {
 		return &customerrors.ErrBuildSQLQuery{Operation: "проверка существования чата", Cause: err}
 	}
 
 	var exists bool
+
 	err = r.db.Pool.QueryRow(ctx, "SELECT EXISTS("+query+")", args...).Scan(&exists)
 	if err != nil {
 		return &customerrors.ErrSQLExecution{Operation: "проверка существования чата", Cause: err}
@@ -172,6 +199,7 @@ func (r *ChatRepository) Delete(ctx context.Context, id int64) error {
 	}
 
 	deleteQuery := r.sq.Delete("chats").Where(sq.Eq{"id": id})
+
 	query, args, err = deleteQuery.ToSql()
 	if err != nil {
 		return &customerrors.ErrBuildSQLQuery{Operation: "удаление чата", Cause: err}
@@ -209,11 +237,13 @@ func (r *ChatRepository) Update(ctx context.Context, chat *models.Chat) error {
 	return nil
 }
 
+//nolint:funlen // Длина функции обусловлена транзакционной обработкой, проверками существования и последовательными операциями добавления.
 func (r *ChatRepository) AddLink(ctx context.Context, chatID, linkID int64) error {
 	tx, err := r.db.Pool.Begin(ctx)
 	if err != nil {
 		return &customerrors.ErrBeginTransaction{Cause: err}
 	}
+
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback(ctx)
@@ -221,12 +251,14 @@ func (r *ChatRepository) AddLink(ctx context.Context, chatID, linkID int64) erro
 	}()
 
 	chatExistsQuery := r.sq.Select("1").From("chats").Where(sq.Eq{"id": chatID}).Limit(1)
+
 	query, args, err := chatExistsQuery.ToSql()
 	if err != nil {
 		return &customerrors.ErrBuildSQLQuery{Operation: "проверка существования чата", Cause: err}
 	}
 
 	var chatExists bool
+
 	err = tx.QueryRow(ctx, "SELECT EXISTS("+query+")", args...).Scan(&chatExists)
 	if err != nil {
 		return &customerrors.ErrSQLExecution{Operation: "проверка существования чата", Cause: err}
@@ -237,12 +269,14 @@ func (r *ChatRepository) AddLink(ctx context.Context, chatID, linkID int64) erro
 	}
 
 	linkExistsQuery := r.sq.Select("1").From("links").Where(sq.Eq{"id": linkID}).Limit(1)
+
 	query, args, err = linkExistsQuery.ToSql()
 	if err != nil {
 		return &customerrors.ErrBuildSQLQuery{Operation: "проверка существования ссылки", Cause: err}
 	}
 
 	var linkExists bool
+
 	err = tx.QueryRow(ctx, "SELECT EXISTS("+query+")", args...).Scan(&linkExists)
 	if err != nil {
 		return &customerrors.ErrSQLExecution{Operation: "проверка существования ссылки", Cause: err}
@@ -294,6 +328,7 @@ func (r *ChatRepository) RemoveLink(ctx context.Context, chatID, linkID int64) e
 	if err != nil {
 		return &customerrors.ErrBeginTransaction{Cause: err}
 	}
+
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback(ctx)
@@ -318,12 +353,14 @@ func (r *ChatRepository) RemoveLink(ctx context.Context, chatID, linkID int64) e
 
 	if result.RowsAffected() == 0 {
 		chatExistsQuery := r.sq.Select("1").From("chats").Where(sq.Eq{"id": chatID}).Limit(1)
+
 		query, args, err = chatExistsQuery.ToSql()
 		if err != nil {
 			return &customerrors.ErrBuildSQLQuery{Operation: "проверка существования чата", Cause: err}
 		}
 
 		var chatExists bool
+
 		err = tx.QueryRow(ctx, "SELECT EXISTS("+query+")", args...).Scan(&chatExists)
 		if err != nil {
 			return &customerrors.ErrSQLExecution{Operation: "проверка существования чата", Cause: err}
@@ -360,12 +397,14 @@ func (r *ChatRepository) RemoveLink(ctx context.Context, chatID, linkID int64) e
 
 func (r *ChatRepository) FindByLinkID(ctx context.Context, linkID int64) ([]*models.Chat, error) {
 	linkExistsQuery := r.sq.Select("1").From("links").Where(sq.Eq{"id": linkID}).Limit(1)
+
 	query, args, err := linkExistsQuery.ToSql()
 	if err != nil {
 		return nil, &customerrors.ErrBuildSQLQuery{Operation: "проверка существования ссылки", Cause: err}
 	}
 
 	var linkExists bool
+
 	err = r.db.Pool.QueryRow(ctx, "SELECT EXISTS("+query+")", args...).Scan(&linkExists)
 	if err != nil {
 		return nil, &customerrors.ErrSQLExecution{Operation: "проверка существования ссылки", Cause: err}
@@ -392,6 +431,7 @@ func (r *ChatRepository) FindByLinkID(ctx context.Context, linkID int64) ([]*mod
 	defer rows.Close()
 
 	var chats []*models.Chat
+
 	for rows.Next() {
 		chat := &models.Chat{}
 		if err := rows.Scan(&chat.ID, &chat.CreatedAt, &chat.UpdatedAt); err != nil {
@@ -402,6 +442,7 @@ func (r *ChatRepository) FindByLinkID(ctx context.Context, linkID int64) ([]*mod
 		if err != nil {
 			return nil, err
 		}
+
 		chat.Links = linkIDs
 
 		chats = append(chats, chat)
@@ -431,8 +472,10 @@ func (r *ChatRepository) GetAll(ctx context.Context) ([]*models.Chat, error) {
 	defer rows.Close()
 
 	chats := make([]*models.Chat, 0)
+
 	for rows.Next() {
 		chat := &models.Chat{}
+
 		err := rows.Scan(&chat.ID, &chat.CreatedAt, &chat.UpdatedAt)
 		if err != nil {
 			return nil, &customerrors.ErrSQLExecution{Operation: "сканирование чата", Cause: err}
@@ -442,6 +485,7 @@ func (r *ChatRepository) GetAll(ctx context.Context) ([]*models.Chat, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		chat.Links = linkIDs
 
 		chats = append(chats, chat)

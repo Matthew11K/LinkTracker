@@ -22,12 +22,14 @@ func NewChatStateRepository(db *database.PostgresDB) *ChatStateRepository {
 
 func (r *ChatStateRepository) GetState(ctx context.Context, chatID int64) (models.ChatState, error) {
 	var state int
+
 	err := r.db.Pool.QueryRow(ctx, "SELECT state FROM chat_states WHERE chat_id = $1", chatID).Scan(&state)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Если состояние не найдено, возвращаем StateIdle (0) по умолчанию
 			return models.StateIdle, nil
 		}
+
 		return models.StateIdle, fmt.Errorf("ошибка при получении состояния чата: %w", err)
 	}
 
@@ -39,6 +41,7 @@ func (r *ChatStateRepository) SetState(ctx context.Context, chatID int64, state 
 	if err != nil {
 		return fmt.Errorf("ошибка при начале транзакции: %w", err)
 	}
+
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback(ctx)
@@ -46,6 +49,7 @@ func (r *ChatStateRepository) SetState(ctx context.Context, chatID int64, state 
 	}()
 
 	var chatExists bool
+
 	err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM chats WHERE id = $1)", chatID).Scan(&chatExists)
 	if err != nil {
 		return fmt.Errorf("ошибка при проверке существования чата: %w", err)
@@ -53,6 +57,7 @@ func (r *ChatStateRepository) SetState(ctx context.Context, chatID int64, state 
 
 	if !chatExists {
 		now := time.Now()
+
 		_, err = tx.Exec(ctx, "INSERT INTO chats (id, created_at, updated_at) VALUES ($1, $2, $3)",
 			chatID, now, now)
 		if err != nil {
@@ -61,6 +66,7 @@ func (r *ChatStateRepository) SetState(ctx context.Context, chatID int64, state 
 	}
 
 	var stateExists bool
+
 	err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM chat_states WHERE chat_id = $1)", chatID).Scan(&stateExists)
 	if err != nil {
 		return fmt.Errorf("ошибка при проверке существования состояния: %w", err)
@@ -91,16 +97,19 @@ func (r *ChatStateRepository) SetState(ctx context.Context, chatID int64, state 
 
 func (r *ChatStateRepository) GetData(ctx context.Context, chatID int64, key string) (interface{}, error) {
 	var valueStr string
+
 	err := r.db.Pool.QueryRow(ctx, "SELECT value FROM chat_state_data WHERE chat_id = $1 AND key = $2",
 		chatID, key).Scan(&valueStr)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil // Возвращаем nil, если данные не найдены
 		}
+
 		return nil, fmt.Errorf("ошибка при получении данных чата: %w", err)
 	}
 
 	var value interface{}
+
 	err = json.Unmarshal([]byte(valueStr), &value)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка при десериализации данных: %w", err)
@@ -114,6 +123,7 @@ func (r *ChatStateRepository) SetData(ctx context.Context, chatID int64, key str
 	if err != nil {
 		return fmt.Errorf("ошибка при начале транзакции: %w", err)
 	}
+
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback(ctx)
@@ -121,6 +131,7 @@ func (r *ChatStateRepository) SetData(ctx context.Context, chatID int64, key str
 	}()
 
 	var chatExists bool
+
 	err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM chats WHERE id = $1)", chatID).Scan(&chatExists)
 	if err != nil {
 		return fmt.Errorf("ошибка при проверке существования чата: %w", err)
@@ -128,6 +139,7 @@ func (r *ChatStateRepository) SetData(ctx context.Context, chatID int64, key str
 
 	if !chatExists {
 		now := time.Now()
+
 		_, err = tx.Exec(ctx, "INSERT INTO chats (id, created_at, updated_at) VALUES ($1, $2, $3)",
 			chatID, now, now)
 		if err != nil {
@@ -141,6 +153,7 @@ func (r *ChatStateRepository) SetData(ctx context.Context, chatID int64, key str
 	}
 
 	now := time.Now()
+
 	_, err = tx.Exec(ctx, `
 		INSERT INTO chat_state_data (chat_id, key, value, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)

@@ -21,6 +21,7 @@ func NewStackOverflowDetailsRepository(db *database.PostgresDB) *StackOverflowDe
 
 func (r *StackOverflowDetailsRepository) Save(ctx context.Context, details *models.StackOverflowDetails) error {
 	var exists bool
+
 	err := r.db.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM links WHERE id = $1)", details.LinkID).Scan(&exists)
 	if err != nil {
 		return fmt.Errorf("ошибка при проверке существования ссылки: %w", err)
@@ -53,6 +54,7 @@ func (r *StackOverflowDetailsRepository) FindByLinkID(ctx context.Context, linkI
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &customerrors.ErrDetailsNotFound{LinkID: linkID}
 		}
+
 		return nil, fmt.Errorf("ошибка при поиске деталей StackOverflow: %w", err)
 	}
 
