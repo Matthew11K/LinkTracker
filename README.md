@@ -1,5 +1,8 @@
 # Telegram Link Tracker Bot
 
+## Описание
+Телеграм-бот для отслеживания обновлений в репозиториях GitHub и вопросах StackOverflow. Бот позволяет добавлять ссылки на ресурсы, отслеживать их обновления и получать уведомления при изменениях.
+
 ## Настройка окружения
 Настройки проекта хранятся в файле `.env`. В репозитории есть файл `.env.example`, который нужно скопировать и переименовать в `.env`:
 
@@ -23,38 +26,29 @@ SCRAPPER_BASE_URL=http://localhost:8081
 SCRAPPER_SERVER_PORT=8081
 BOT_BASE_URL=http://localhost:8080
 SCHEDULER_CHECK_INTERVAL=1m
+
+# Настройки базы данных
+DATABASE_URL=postgres://postgres:postgres@postgres:5432/link_tracker?sslmode=disable
+DATABASE_ACCESS_TYPE=SQL
+DATABASE_BATCH_SIZE=100
+DATABASE_MAX_CONNECTIONS=10
+
+# Настройки PostgreSQL для Docker
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DB=link_tracker
 ```
 
+## Запуск проекта с помощью Docker Compose
 
-## Запуск проекта
+### Предварительные требования
+- Установленный Docker и Docker Compose
+- Настроенный файл `.env` с корректными значениями
 
-### 1. Сборка проекта
+### Запуск всех сервисов
 
-Для сборки всего проекта выполните:
-
-```bash
-make build
-```
-
-Или соберите компоненты по отдельности:
+Для запуска всего приложения, включая базу данных PostgreSQL, миграции и основной сервис, выполните:
 
 ```bash
-make build_bot
-make build_scrapper
-```
-
-Бинарные файлы будут сохранены в директорию `./bin/`.
-
-### 2. Запуск сервисов
-
-#### Запуск собранных бинарных файлов
-
-1. Запустите Scrapper:
-```bash
-./bin/scrapper
-```
-
-2. Запустите Bot (в отдельном терминале):
-```bash
-./bin/bot
+docker-compose up -d
 ```
