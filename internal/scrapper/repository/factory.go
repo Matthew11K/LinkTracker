@@ -11,6 +11,7 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/repository/orm"
 	sqlrepo "github.com/central-university-dev/go-Matthew11K/internal/scrapper/repository/sql"
+	"github.com/central-university-dev/go-Matthew11K/pkg/txs"
 )
 
 type GitHubDetailsRepository interface {
@@ -26,16 +27,18 @@ type StackOverflowDetailsRepository interface {
 }
 
 type Factory struct {
-	db     *database.PostgresDB
-	config *config.Config
-	logger *slog.Logger
+	db        *database.PostgresDB
+	config    *config.Config
+	logger    *slog.Logger
+	txManager *txs.TxManager
 }
 
-func NewFactory(db *database.PostgresDB, config *config.Config, logger *slog.Logger) *Factory {
+func NewFactory(db *database.PostgresDB, config *config.Config, logger *slog.Logger, txManager *txs.TxManager) *Factory {
 	return &Factory{
-		db:     db,
-		config: config,
-		logger: logger,
+		db:        db,
+		config:    config,
+		logger:    logger,
+		txManager: txManager,
 	}
 }
 
@@ -43,10 +46,10 @@ func (f *Factory) CreateLinkRepository() (LinkRepository, error) {
 	switch f.config.DatabaseAccessType {
 	case config.SquirrelAccess:
 		f.logger.Info("Создание ORM (Squirrel) репозитория ссылок")
-		return orm.NewLinkRepository(f.db), nil
+		return orm.NewLinkRepository(f.db, f.txManager), nil
 	case config.SQLAccess:
 		f.logger.Info("Создание SQL репозитория ссылок")
-		return sqlrepo.NewLinkRepository(f.db), nil
+		return sqlrepo.NewLinkRepository(f.db, f.txManager), nil
 	default:
 		return nil, &errors.ErrUnknownDBAccessType{AccessType: string(f.config.DatabaseAccessType)}
 	}
@@ -56,10 +59,10 @@ func (f *Factory) CreateChatRepository() (ChatRepository, error) {
 	switch f.config.DatabaseAccessType {
 	case config.SquirrelAccess:
 		f.logger.Info("Создание ORM (Squirrel) репозитория чатов")
-		return orm.NewChatRepository(f.db), nil
+		return orm.NewChatRepository(f.db, f.txManager), nil
 	case config.SQLAccess:
 		f.logger.Info("Создание SQL репозитория чатов")
-		return sqlrepo.NewChatRepository(f.db), nil
+		return sqlrepo.NewChatRepository(f.db, f.txManager), nil
 	default:
 		var repo ChatRepository
 		return repo, &errors.ErrUnknownDBAccessType{AccessType: string(f.config.DatabaseAccessType)}
@@ -70,10 +73,10 @@ func (f *Factory) CreateGitHubDetailsRepository() (GitHubDetailsRepository, erro
 	switch f.config.DatabaseAccessType {
 	case config.SquirrelAccess:
 		f.logger.Info("Создание ORM (Squirrel) репозитория GitHub деталей")
-		return orm.NewGitHubDetailsRepository(f.db), nil
+		return orm.NewGitHubDetailsRepository(f.db, f.txManager), nil
 	case config.SQLAccess:
 		f.logger.Info("Создание SQL репозитория GitHub деталей")
-		return sqlrepo.NewGitHubDetailsRepository(f.db), nil
+		return sqlrepo.NewGitHubDetailsRepository(f.db, f.txManager), nil
 	default:
 		var repo GitHubDetailsRepository
 		return repo, &errors.ErrUnknownDBAccessType{AccessType: string(f.config.DatabaseAccessType)}
@@ -84,10 +87,10 @@ func (f *Factory) CreateStackOverflowDetailsRepository() (StackOverflowDetailsRe
 	switch f.config.DatabaseAccessType {
 	case config.SquirrelAccess:
 		f.logger.Info("Создание ORM (Squirrel) репозитория StackOverflow деталей")
-		return orm.NewStackOverflowDetailsRepository(f.db), nil
+		return orm.NewStackOverflowDetailsRepository(f.db, f.txManager), nil
 	case config.SQLAccess:
 		f.logger.Info("Создание SQL репозитория StackOverflow деталей")
-		return sqlrepo.NewStackOverflowDetailsRepository(f.db), nil
+		return sqlrepo.NewStackOverflowDetailsRepository(f.db, f.txManager), nil
 	default:
 		var repo StackOverflowDetailsRepository
 		return repo, &errors.ErrUnknownDBAccessType{AccessType: string(f.config.DatabaseAccessType)}

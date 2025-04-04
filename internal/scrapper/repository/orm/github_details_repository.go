@@ -9,81 +9,74 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/internal/database"
 	customerrors "github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
+	"github.com/central-university-dev/go-Matthew11K/pkg/txs"
 	"github.com/jackc/pgx/v5"
 )
 
 type GitHubDetailsRepository struct {
-	db *database.PostgresDB
-	sq sq.StatementBuilderType
+	db        *database.PostgresDB
+	sq        sq.StatementBuilderType
+	txManager *txs.TxManager
 }
 
-func NewGitHubDetailsRepository(db *database.PostgresDB) *GitHubDetailsRepository {
+func NewGitHubDetailsRepository(db *database.PostgresDB, txManager *txs.TxManager) *GitHubDetailsRepository {
 	return &GitHubDetailsRepository{
-		db: db,
-		sq: sq.StatementBuilder.PlaceholderFormat(sq.Dollar),
+		db:        db,
+		sq:        sq.StatementBuilder.PlaceholderFormat(sq.Dollar),
+		txManager: txManager,
 	}
 }
 
 func (r *GitHubDetailsRepository) Save(ctx context.Context, details *models.GitHubDetails) error {
-	tx, err := r.db.Pool.Begin(ctx)
-	if err != nil {
-		return &customerrors.ErrBeginTransaction{Cause: err}
-	}
+	return r.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		querier := txs.GetQuerier(ctx, r.db.Pool)
 
-	defer func() {
+		linkExistsQuery := r.sq.Select("1").From("links").Where(sq.Eq{"id": details.LinkID}).Limit(1)
+
+		query, args, err := linkExistsQuery.ToSql()
 		if err != nil {
-			_ = tx.Rollback(ctx)
+			return &customerrors.ErrBuildSQLQuery{Operation: "проверка существования ссылки", Cause: err}
 		}
-	}()
 
-	linkExistsQuery := r.sq.Select("1").From("links").Where(sq.Eq{"id": details.LinkID}).Limit(1)
+		var linkExists bool
 
-	query, args, err := linkExistsQuery.ToSql()
-	if err != nil {
-		return &customerrors.ErrBuildSQLQuery{Operation: "проверка существования ссылки", Cause: err}
-	}
+		err = querier.QueryRow(ctx, "SELECT EXISTS("+query+")", args...).Scan(&linkExists)
+		if err != nil {
+			return &customerrors.ErrSQLExecution{Operation: "проверка существования ссылки", Cause: err}
+		}
 
-	var linkExists bool
+		if !linkExists {
+			return &customerrors.ErrLinkNotFound{URL: "ID: " + string(rune(details.LinkID))}
+		}
 
-	err = tx.QueryRow(ctx, "SELECT EXISTS("+query+")", args...).Scan(&linkExists)
-	if err != nil {
-		return &customerrors.ErrSQLExecution{Operation: "проверка существования ссылки", Cause: err}
-	}
+		upsertQuery := r.sq.Insert("github_details").
+			Columns("link_id", "title", "author", "updated_at", "description").
+			Values(details.LinkID, details.Title, details.Author, details.UpdatedAt, details.Description).
+			Suffix(
+				"ON CONFLICT (link_id) DO UPDATE SET " +
+					"title = EXCLUDED.title, " +
+					"author = EXCLUDED.author, " +
+					"updated_at = EXCLUDED.updated_at, " +
+					"description = EXCLUDED.description",
+			)
 
-	if !linkExists {
-		return &customerrors.ErrLinkNotFound{URL: "ID: " + string(rune(details.LinkID))}
-	}
+		query, args, err = upsertQuery.ToSql()
+		if err != nil {
+			return &customerrors.ErrBuildSQLQuery{Operation: "вставка деталей GitHub", Cause: err}
+		}
 
-	upsertQuery := r.sq.Insert("github_details").
-		Columns("link_id", "title", "author", "updated_at", "description").
-		Values(details.LinkID, details.Title, details.Author, details.UpdatedAt, details.Description).
-		Suffix(
-			"ON CONFLICT (link_id) DO UPDATE SET " +
-				"title = EXCLUDED.title, " +
-				"author = EXCLUDED.author, " +
-				"updated_at = EXCLUDED.updated_at, " +
-				"description = EXCLUDED.description",
-		)
+		_, err = querier.Exec(ctx, query, args...)
+		if err != nil {
+			return &customerrors.ErrSQLExecution{Operation: "сохранение деталей GitHub", Cause: err}
+		}
 
-	query, args, err = upsertQuery.ToSql()
-	if err != nil {
-		return &customerrors.ErrBuildSQLQuery{Operation: "вставка деталей GitHub", Cause: err}
-	}
-
-	_, err = tx.Exec(ctx, query, args...)
-	if err != nil {
-		return &customerrors.ErrSQLExecution{Operation: "сохранение деталей GitHub", Cause: err}
-	}
-
-	err = tx.Commit(ctx)
-	if err != nil {
-		return &customerrors.ErrCommitTransaction{Cause: err}
-	}
-
-	return nil
+		return nil
+	})
 }
 
 func (r *GitHubDetailsRepository) FindByLinkID(ctx context.Context, linkID int64) (*models.GitHubDetails, error) {
+	querier := txs.GetQuerier(ctx, r.db.Pool)
+
 	selectQuery := r.sq.Select("title", "author", "updated_at", "description").
 		From("github_details").
 		Where(sq.Eq{"link_id": linkID})
@@ -95,7 +88,7 @@ func (r *GitHubDetailsRepository) FindByLinkID(ctx context.Context, linkID int64
 
 	details := &models.GitHubDetails{LinkID: linkID}
 
-	err = r.db.Pool.QueryRow(ctx, query, args...).
+	err = querier.QueryRow(ctx, query, args...).
 		Scan(&details.Title, &details.Author, &details.UpdatedAt, &details.Description)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -109,28 +102,32 @@ func (r *GitHubDetailsRepository) FindByLinkID(ctx context.Context, linkID int64
 }
 
 func (r *GitHubDetailsRepository) Update(ctx context.Context, details *models.GitHubDetails) error {
-	details.UpdatedAt = time.Now()
+	return r.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		querier := txs.GetQuerier(ctx, r.db.Pool)
 
-	updateQuery := r.sq.Update("github_details").
-		Set("title", details.Title).
-		Set("author", details.Author).
-		Set("updated_at", details.UpdatedAt).
-		Set("description", details.Description).
-		Where(sq.Eq{"link_id": details.LinkID})
+		details.UpdatedAt = time.Now()
 
-	query, args, err := updateQuery.ToSql()
-	if err != nil {
-		return &customerrors.ErrBuildSQLQuery{Operation: "обновление деталей GitHub", Cause: err}
-	}
+		updateQuery := r.sq.Update("github_details").
+			Set("title", details.Title).
+			Set("author", details.Author).
+			Set("updated_at", details.UpdatedAt).
+			Set("description", details.Description).
+			Where(sq.Eq{"link_id": details.LinkID})
 
-	result, err := r.db.Pool.Exec(ctx, query, args...)
-	if err != nil {
-		return &customerrors.ErrSQLExecution{Operation: "обновление деталей GitHub", Cause: err}
-	}
+		query, args, err := updateQuery.ToSql()
+		if err != nil {
+			return &customerrors.ErrBuildSQLQuery{Operation: "обновление деталей GitHub", Cause: err}
+		}
 
-	if result.RowsAffected() == 0 {
-		return &customerrors.ErrDetailsNotFound{LinkID: details.LinkID}
-	}
+		result, err := querier.Exec(ctx, query, args...)
+		if err != nil {
+			return &customerrors.ErrSQLExecution{Operation: "обновление деталей GitHub", Cause: err}
+		}
 
-	return nil
+		if result.RowsAffected() == 0 {
+			return &customerrors.ErrDetailsNotFound{LinkID: details.LinkID}
+		}
+
+		return nil
+	})
 }

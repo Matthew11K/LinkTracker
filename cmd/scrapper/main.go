@@ -16,6 +16,7 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/notify"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/repository"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/scheduler"
+	"github.com/central-university-dev/go-Matthew11K/pkg/txs"
 
 	"log/slog"
 
@@ -93,7 +94,11 @@ func run() error {
 	}
 	defer db.Close()
 
-	repoFactory := repository.NewFactory(db, cfg, appLogger)
+	// Создаем менеджер транзакций
+	txManager := txs.NewTxManager(db.Pool, appLogger)
+
+	// Передаем менеджер транзакций в фабрику репозиториев
+	repoFactory := repository.NewFactory(db, cfg, appLogger, txManager)
 
 	linkRepo, err := repoFactory.CreateLinkRepository()
 	if err != nil {

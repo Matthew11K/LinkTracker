@@ -9,81 +9,74 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/internal/database"
 	customerrors "github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
+	"github.com/central-university-dev/go-Matthew11K/pkg/txs"
 	"github.com/jackc/pgx/v5"
 )
 
 type StackOverflowDetailsRepository struct {
-	db *database.PostgresDB
-	sq sq.StatementBuilderType
+	db        *database.PostgresDB
+	sq        sq.StatementBuilderType
+	txManager *txs.TxManager
 }
 
-func NewStackOverflowDetailsRepository(db *database.PostgresDB) *StackOverflowDetailsRepository {
+func NewStackOverflowDetailsRepository(db *database.PostgresDB, txManager *txs.TxManager) *StackOverflowDetailsRepository {
 	return &StackOverflowDetailsRepository{
-		db: db,
-		sq: sq.StatementBuilder.PlaceholderFormat(sq.Dollar),
+		db:        db,
+		sq:        sq.StatementBuilder.PlaceholderFormat(sq.Dollar),
+		txManager: txManager,
 	}
 }
 
 func (r *StackOverflowDetailsRepository) Save(ctx context.Context, details *models.StackOverflowDetails) error {
-	tx, err := r.db.Pool.Begin(ctx)
-	if err != nil {
-		return &customerrors.ErrBeginTransaction{Cause: err}
-	}
+	return r.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		querier := txs.GetQuerier(ctx, r.db.Pool)
 
-	defer func() {
+		linkExistsQuery := r.sq.Select("1").From("links").Where(sq.Eq{"id": details.LinkID}).Limit(1)
+
+		query, args, err := linkExistsQuery.ToSql()
 		if err != nil {
-			_ = tx.Rollback(ctx)
+			return &customerrors.ErrBuildSQLQuery{Operation: "проверка существования ссылки", Cause: err}
 		}
-	}()
 
-	linkExistsQuery := r.sq.Select("1").From("links").Where(sq.Eq{"id": details.LinkID}).Limit(1)
+		var linkExists bool
 
-	query, args, err := linkExistsQuery.ToSql()
-	if err != nil {
-		return &customerrors.ErrBuildSQLQuery{Operation: "проверка существования ссылки", Cause: err}
-	}
+		err = querier.QueryRow(ctx, "SELECT EXISTS("+query+")", args...).Scan(&linkExists)
+		if err != nil {
+			return &customerrors.ErrSQLExecution{Operation: "проверка существования ссылки", Cause: err}
+		}
 
-	var linkExists bool
+		if !linkExists {
+			return &customerrors.ErrLinkNotFound{URL: "ID: " + string(rune(details.LinkID))}
+		}
 
-	err = tx.QueryRow(ctx, "SELECT EXISTS("+query+")", args...).Scan(&linkExists)
-	if err != nil {
-		return &customerrors.ErrSQLExecution{Operation: "проверка существования ссылки", Cause: err}
-	}
+		upsertQuery := r.sq.Insert("stackoverflow_details").
+			Columns("link_id", "title", "author", "updated_at", "content").
+			Values(details.LinkID, details.Title, details.Author, details.UpdatedAt, details.Content).
+			Suffix(
+				"ON CONFLICT (link_id) DO UPDATE SET " +
+					"title = EXCLUDED.title, " +
+					"author = EXCLUDED.author, " +
+					"updated_at = EXCLUDED.updated_at, " +
+					"content = EXCLUDED.content",
+			)
 
-	if !linkExists {
-		return &customerrors.ErrLinkNotFound{URL: "ID: " + string(rune(details.LinkID))}
-	}
+		query, args, err = upsertQuery.ToSql()
+		if err != nil {
+			return &customerrors.ErrBuildSQLQuery{Operation: "вставка деталей StackOverflow", Cause: err}
+		}
 
-	upsertQuery := r.sq.Insert("stackoverflow_details").
-		Columns("link_id", "title", "author", "updated_at", "content").
-		Values(details.LinkID, details.Title, details.Author, details.UpdatedAt, details.Content).
-		Suffix(
-			"ON CONFLICT (link_id) DO UPDATE SET " +
-				"title = EXCLUDED.title, " +
-				"author = EXCLUDED.author, " +
-				"updated_at = EXCLUDED.updated_at, " +
-				"content = EXCLUDED.content",
-		)
+		_, err = querier.Exec(ctx, query, args...)
+		if err != nil {
+			return &customerrors.ErrSQLExecution{Operation: "сохранение деталей StackOverflow", Cause: err}
+		}
 
-	query, args, err = upsertQuery.ToSql()
-	if err != nil {
-		return &customerrors.ErrBuildSQLQuery{Operation: "вставка деталей StackOverflow", Cause: err}
-	}
-
-	_, err = tx.Exec(ctx, query, args...)
-	if err != nil {
-		return &customerrors.ErrSQLExecution{Operation: "сохранение деталей StackOverflow", Cause: err}
-	}
-
-	err = tx.Commit(ctx)
-	if err != nil {
-		return &customerrors.ErrCommitTransaction{Cause: err}
-	}
-
-	return nil
+		return nil
+	})
 }
 
 func (r *StackOverflowDetailsRepository) FindByLinkID(ctx context.Context, linkID int64) (*models.StackOverflowDetails, error) {
+	querier := txs.GetQuerier(ctx, r.db.Pool)
+
 	selectQuery := r.sq.Select("title", "author", "updated_at", "content").
 		From("stackoverflow_details").
 		Where(sq.Eq{"link_id": linkID})
@@ -95,7 +88,7 @@ func (r *StackOverflowDetailsRepository) FindByLinkID(ctx context.Context, linkI
 
 	details := &models.StackOverflowDetails{LinkID: linkID}
 
-	err = r.db.Pool.QueryRow(ctx, query, args...).
+	err = querier.QueryRow(ctx, query, args...).
 		Scan(&details.Title, &details.Author, &details.UpdatedAt, &details.Content)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -109,28 +102,32 @@ func (r *StackOverflowDetailsRepository) FindByLinkID(ctx context.Context, linkI
 }
 
 func (r *StackOverflowDetailsRepository) Update(ctx context.Context, details *models.StackOverflowDetails) error {
-	details.UpdatedAt = time.Now()
+	return r.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		querier := txs.GetQuerier(ctx, r.db.Pool)
 
-	updateQuery := r.sq.Update("stackoverflow_details").
-		Set("title", details.Title).
-		Set("author", details.Author).
-		Set("updated_at", details.UpdatedAt).
-		Set("content", details.Content).
-		Where(sq.Eq{"link_id": details.LinkID})
+		details.UpdatedAt = time.Now()
 
-	query, args, err := updateQuery.ToSql()
-	if err != nil {
-		return &customerrors.ErrBuildSQLQuery{Operation: "обновление деталей StackOverflow", Cause: err}
-	}
+		updateQuery := r.sq.Update("stackoverflow_details").
+			Set("title", details.Title).
+			Set("author", details.Author).
+			Set("updated_at", details.UpdatedAt).
+			Set("content", details.Content).
+			Where(sq.Eq{"link_id": details.LinkID})
 
-	result, err := r.db.Pool.Exec(ctx, query, args...)
-	if err != nil {
-		return &customerrors.ErrSQLExecution{Operation: "обновление деталей StackOverflow", Cause: err}
-	}
+		query, args, err := updateQuery.ToSql()
+		if err != nil {
+			return &customerrors.ErrBuildSQLQuery{Operation: "обновление деталей StackOverflow", Cause: err}
+		}
 
-	if result.RowsAffected() == 0 {
-		return &customerrors.ErrDetailsNotFound{LinkID: details.LinkID}
-	}
+		result, err := querier.Exec(ctx, query, args...)
+		if err != nil {
+			return &customerrors.ErrSQLExecution{Operation: "обновление деталей StackOverflow", Cause: err}
+		}
 
-	return nil
+		if result.RowsAffected() == 0 {
+			return &customerrors.ErrDetailsNotFound{LinkID: details.LinkID}
+		}
+
+		return nil
+	})
 }

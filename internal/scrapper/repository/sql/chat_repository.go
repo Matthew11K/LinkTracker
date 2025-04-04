@@ -9,34 +9,54 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/internal/database"
 	customerrors "github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
+	"github.com/central-university-dev/go-Matthew11K/pkg/txs"
 	"github.com/jackc/pgx/v5"
 )
 
 type ChatRepository struct {
-	db *database.PostgresDB
+	db        *database.PostgresDB
+	txManager *txs.TxManager
 }
 
-func NewChatRepository(db *database.PostgresDB) *ChatRepository {
-	return &ChatRepository{db: db}
+func NewChatRepository(db *database.PostgresDB, txManager *txs.TxManager) *ChatRepository {
+	return &ChatRepository{db: db, txManager: txManager}
 }
 
 func (r *ChatRepository) Save(ctx context.Context, chat *models.Chat) error {
-	now := time.Now()
+	return r.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		querier := txs.GetQuerier(ctx, r.db.Pool)
 
-	if chat.CreatedAt.IsZero() {
-		chat.CreatedAt = now
-	}
+		var exists bool
 
-	chat.UpdatedAt = now
+		err := querier.QueryRow(ctx,
+			"SELECT EXISTS(SELECT 1 FROM chats WHERE id = $1)",
+			chat.ID).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("ошибка при проверке существования чата: %w", err)
+		}
 
-	_, err := r.db.Pool.Exec(ctx,
-		"INSERT INTO chats (id, created_at, updated_at) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET updated_at = $3",
-		chat.ID, chat.CreatedAt, chat.UpdatedAt)
-	if err != nil {
-		return fmt.Errorf("ошибка при сохранении чата: %w", err)
-	}
+		if exists {
+			return &customerrors.ErrChatAlreadyExists{ChatID: chat.ID}
+		}
 
-	return nil
+		now := time.Now()
+		if chat.CreatedAt.IsZero() {
+			chat.CreatedAt = now
+		}
+
+		if chat.UpdatedAt.IsZero() {
+			chat.UpdatedAt = now
+		}
+
+		_, err = querier.Exec(ctx,
+			"INSERT INTO chats (id, created_at, updated_at) VALUES ($1, $2, $3)",
+			chat.ID, chat.CreatedAt, chat.UpdatedAt)
+		if err != nil {
+			return fmt.Errorf("ошибка при сохранении чата: %w", err)
+		}
+
+		return nil
+	})
 }
 
 func (r *ChatRepository) FindByID(ctx context.Context, id int64) (*models.Chat, error) {
@@ -91,16 +111,40 @@ func (r *ChatRepository) getLinkIDs(ctx context.Context, chatID int64) ([]int64,
 }
 
 func (r *ChatRepository) Delete(ctx context.Context, id int64) error {
-	result, err := r.db.Pool.Exec(ctx, "DELETE FROM chats WHERE id = $1", id)
-	if err != nil {
-		return fmt.Errorf("ошибка при удалении чата: %w", err)
-	}
+	return r.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		querier := txs.GetQuerier(ctx, r.db.Pool)
 
-	if result.RowsAffected() == 0 {
-		return &customerrors.ErrChatNotFound{ChatID: id}
-	}
+		chat, err := r.FindByID(ctx, id)
+		if err != nil {
+			return err
+		}
 
-	return nil
+		_, err = querier.Exec(ctx, "DELETE FROM chat_links WHERE chat_id = $1", id)
+		if err != nil {
+			return fmt.Errorf("ошибка при удалении связей чата: %w", err)
+		}
+
+		_, err = querier.Exec(ctx, "DELETE FROM chat_states WHERE chat_id = $1", id)
+		if err != nil {
+			return fmt.Errorf("ошибка при удалении состояний чата: %w", err)
+		}
+
+		_, err = querier.Exec(ctx, "DELETE FROM chat_state_data WHERE chat_id = $1", id)
+		if err != nil {
+			return fmt.Errorf("ошибка при удалении данных состояний чата: %w", err)
+		}
+
+		result, err := querier.Exec(ctx, "DELETE FROM chats WHERE id = $1", id)
+		if err != nil {
+			return fmt.Errorf("ошибка при удалении чата: %w", err)
+		}
+
+		if result.RowsAffected() == 0 {
+			return &customerrors.ErrChatNotFound{ChatID: chat.ID}
+		}
+
+		return nil
+	})
 }
 
 func (r *ChatRepository) Update(ctx context.Context, chat *models.Chat) error {
@@ -121,70 +165,99 @@ func (r *ChatRepository) Update(ctx context.Context, chat *models.Chat) error {
 }
 
 func (r *ChatRepository) AddLink(ctx context.Context, chatID, linkID int64) error {
-	var exists bool
+	return r.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		querier := txs.GetQuerier(ctx, r.db.Pool)
 
-	err := r.db.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM chats WHERE id = $1)", chatID).Scan(&exists)
+		_, err := r.FindByID(ctx, chatID)
+		if err != nil {
+			return err
+		}
+
+		var linkExists bool
+
+		err = querier.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM links WHERE id = $1)", linkID).Scan(&linkExists)
+		if err != nil {
+			return fmt.Errorf("ошибка при проверке существования ссылки: %w", err)
+		}
+
+		if !linkExists {
+			return &customerrors.ErrLinkNotFound{URL: fmt.Sprintf("ID: %d", linkID)}
+		}
+
+		_, err = querier.Exec(ctx,
+			"INSERT INTO chat_links (chat_id, link_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+			chatID, linkID)
+		if err != nil {
+			return fmt.Errorf("ошибка при добавлении связи чата со ссылкой: %w", err)
+		}
+
+		return nil
+	})
+}
+
+func (r *ChatRepository) deleteLinkWithDependencies(ctx context.Context, querier txs.Querier, linkID int64) error {
+	_, err := querier.Exec(ctx, "DELETE FROM filters WHERE link_id = $1", linkID)
 	if err != nil {
-		return fmt.Errorf("ошибка при проверке существования чата: %w", err)
+		return fmt.Errorf("ошибка при удалении фильтров: %w", err)
 	}
 
-	if !exists {
-		return &customerrors.ErrChatNotFound{ChatID: chatID}
-	}
-
-	err = r.db.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM links WHERE id = $1)", linkID).Scan(&exists)
+	_, err = querier.Exec(ctx, "DELETE FROM link_tags WHERE link_id = $1", linkID)
 	if err != nil {
-		return fmt.Errorf("ошибка при проверке существования ссылки: %w", err)
+		return fmt.Errorf("ошибка при удалении тегов: %w", err)
 	}
 
-	if !exists {
-		return &customerrors.ErrLinkNotFound{URL: fmt.Sprintf("ID: %d", linkID)}
-	}
-
-	_, err = r.db.Pool.Exec(ctx,
-		"INSERT INTO chat_links (chat_id, link_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-		chatID, linkID)
+	_, err = querier.Exec(ctx, "DELETE FROM github_details WHERE link_id = $1", linkID)
 	if err != nil {
-		return fmt.Errorf("ошибка при связывании чата и ссылки: %w", err)
+		return fmt.Errorf("ошибка при удалении деталей GitHub: %w", err)
 	}
 
-	_, err = r.db.Pool.Exec(ctx, "UPDATE chats SET updated_at = $1 WHERE id = $2", time.Now(), chatID)
+	_, err = querier.Exec(ctx, "DELETE FROM stackoverflow_details WHERE link_id = $1", linkID)
 	if err != nil {
-		return fmt.Errorf("ошибка при обновлении времени чата: %w", err)
+		return fmt.Errorf("ошибка при удалении деталей StackOverflow: %w", err)
+	}
+
+	_, err = querier.Exec(ctx, "DELETE FROM links WHERE id = $1", linkID)
+	if err != nil {
+		return fmt.Errorf("ошибка при удалении ссылки: %w", err)
 	}
 
 	return nil
 }
 
 func (r *ChatRepository) RemoveLink(ctx context.Context, chatID, linkID int64) error {
-	result, err := r.db.Pool.Exec(ctx,
-		"DELETE FROM chat_links WHERE chat_id = $1 AND link_id = $2",
-		chatID, linkID)
-	if err != nil {
-		return fmt.Errorf("ошибка при удалении связи чата и ссылки: %w", err)
-	}
+	return r.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		querier := txs.GetQuerier(ctx, r.db.Pool)
 
-	if result.RowsAffected() == 0 {
 		var exists bool
 
-		err := r.db.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM chats WHERE id = $1)", chatID).Scan(&exists)
+		err := querier.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM chat_links WHERE chat_id = $1 AND link_id = $2)",
+			chatID, linkID).Scan(&exists)
 		if err != nil {
-			return fmt.Errorf("ошибка при проверке существования чата: %w", err)
+			return fmt.Errorf("ошибка при проверке существования связи: %w", err)
 		}
 
 		if !exists {
-			return &customerrors.ErrChatNotFound{ChatID: chatID}
+			return &customerrors.ErrLinkNotFound{URL: fmt.Sprintf("ID: %d", linkID)}
 		}
 
-		return &customerrors.ErrLinkNotFound{URL: fmt.Sprintf("ID: %d", linkID)}
-	}
+		_, err = querier.Exec(ctx, "DELETE FROM chat_links WHERE chat_id = $1 AND link_id = $2", chatID, linkID)
+		if err != nil {
+			return fmt.Errorf("ошибка при удалении связи чата и ссылки: %w", err)
+		}
 
-	_, err = r.db.Pool.Exec(ctx, "UPDATE chats SET updated_at = $1 WHERE id = $2", time.Now(), chatID)
-	if err != nil {
-		return fmt.Errorf("ошибка при обновлении времени чата: %w", err)
-	}
+		var count int
 
-	return nil
+		err = querier.QueryRow(ctx, "SELECT COUNT(*) FROM chat_links WHERE link_id = $1", linkID).Scan(&count)
+		if err != nil {
+			return fmt.Errorf("ошибка при проверке использования ссылки: %w", err)
+		}
+
+		if count == 0 {
+			return r.deleteLinkWithDependencies(ctx, querier, linkID)
+		}
+
+		return nil
+	})
 }
 
 func (r *ChatRepository) FindByLinkID(ctx context.Context, linkID int64) ([]*models.Chat, error) {

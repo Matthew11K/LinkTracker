@@ -23,6 +23,7 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/internal/config"
 	"github.com/central-university-dev/go-Matthew11K/internal/database"
 	"github.com/central-university-dev/go-Matthew11K/pkg"
+	"github.com/central-university-dev/go-Matthew11K/pkg/txs"
 )
 
 func gracefulShutdown(server *http.Server, poller *telegram.Poller, stopCh <-chan struct{}, appLogger *slog.Logger) {
@@ -114,7 +115,8 @@ func run() error {
 
 	defer db.Close()
 
-	repoFactory := repository.NewFactory(db, cfg, appLogger)
+	txManager := txs.NewTxManager(db.Pool, appLogger)
+	repoFactory := repository.NewFactory(db, cfg, appLogger, txManager)
 
 	chatStateRepo, err := repoFactory.CreateChatStateRepository()
 	if err != nil {

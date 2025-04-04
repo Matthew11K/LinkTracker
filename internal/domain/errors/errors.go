@@ -12,6 +12,11 @@ func (e *ErrLinkAlreadyExists) Error() string {
 	return "ссылка уже отслеживается: " + e.URL
 }
 
+func (e *ErrLinkAlreadyExists) Is(target error) bool {
+	_, ok := target.(*ErrLinkAlreadyExists)
+	return ok
+}
+
 type ErrLinkNotFound struct {
 	URL string
 }
@@ -20,12 +25,25 @@ func (e *ErrLinkNotFound) Error() string {
 	return "ссылка не найдена: " + e.URL
 }
 
+func (e *ErrLinkNotFound) Is(target error) bool {
+	_, ok := target.(*ErrLinkNotFound)
+	return ok
+}
+
 type ErrChatNotFound struct {
 	ChatID int64
 }
 
 func (e *ErrChatNotFound) Error() string {
-	return "чат не найден: " + string(rune(e.ChatID))
+	return fmt.Sprintf("чат не найден: %d", e.ChatID)
+}
+
+type ErrChatAlreadyExists struct {
+	ChatID int64
+}
+
+func (e *ErrChatAlreadyExists) Error() string {
+	return fmt.Sprintf("чат с ID %d уже существует", e.ChatID)
 }
 
 type ErrInvalidURL struct {
@@ -171,4 +189,13 @@ type ErrTagNotFound struct {
 
 func (e *ErrTagNotFound) Error() string {
 	return fmt.Sprintf("тег '%s' не найден для ссылки '%s'", e.Tag, e.URL)
+}
+
+type ErrLinkNotInChat struct {
+	ChatID int64
+	LinkID int64
+}
+
+func (e *ErrLinkNotInChat) Error() string {
+	return fmt.Sprintf("ссылка c ID %d не найдена в чате c ID %d", e.LinkID, e.ChatID)
 }

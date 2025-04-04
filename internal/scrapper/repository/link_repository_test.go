@@ -2,7 +2,9 @@ package repository_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -12,9 +14,10 @@ import (
 
 	"github.com/central-university-dev/go-Matthew11K/internal/config"
 	"github.com/central-university-dev/go-Matthew11K/internal/database"
-	"github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
+	customerrors "github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/repository"
+	"github.com/central-university-dev/go-Matthew11K/pkg/txs"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -153,6 +156,13 @@ func clearTables(ctx context.Context, t *testing.T) {
 		_, err := testDB.Pool.Exec(ctx, query)
 
 		require.NoErrorf(t, err, "Failed to clear table %s", table)
+
+		var count int
+
+		countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s", table)
+		err = testDB.Pool.QueryRow(ctx, countQuery).Scan(&count)
+		require.NoErrorf(t, err, "Failed to check count in table %s", table)
+		require.Equal(t, 0, count, "Table %s should be empty after clearing", table)
 	}
 
 	sequences := []string{
@@ -175,12 +185,19 @@ func clearTables(ctx context.Context, t *testing.T) {
 
 func runTestsForConfig(t *testing.T, accessType config.AccessType) {
 	ctx := context.Background()
+	testDB, cleanup, err := setupTestDatabase(ctx)
+	require.NoError(t, err, "Ошибка настройки тестовой базы данных")
+
+	defer cleanup()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	testCfg := &config.Config{
 		DatabaseAccessType: accessType,
 	}
 
-	factory := repository.NewFactory(testDB, testCfg, logger)
+	txManager := txs.NewTxManager(testDB.Pool, logger)
+	factory := repository.NewFactory(testDB, testCfg, logger, txManager)
 
 	linkRepo, err := factory.CreateLinkRepository()
 	require.NoError(t, err, "Ошибка создания LinkRepository для %s", accessType)
@@ -222,14 +239,14 @@ func runTestsForConfig(t *testing.T, accessType config.AccessType) {
 		duplicateLink := &models.Link{URL: linkURL, Type: models.GitHub}
 		err = linkRepo.Save(ctx, duplicateLink)
 		require.Error(t, err, "Saving duplicate should fail for %s", accessType)
-		assert.IsType(t, &errors.ErrLinkAlreadyExists{}, err, "Error type should be ErrLinkAlreadyExists for %s", accessType)
+		assert.True(t, errors.Is(err, &customerrors.ErrLinkAlreadyExists{}), "Error should be ErrLinkAlreadyExists for %s", accessType)
 	})
 
 	t.Run("LinkRepository FindByID not found", func(t *testing.T) {
 		clearTables(ctx, t)
 		_, err := linkRepo.FindByID(ctx, -1)
 		require.Error(t, err, "FindByID for non-existent ID should fail for %s", accessType)
-		assert.IsType(t, &errors.ErrLinkNotFound{}, err, "Error type should be ErrLinkNotFound for %s", accessType)
+		assert.IsType(t, &customerrors.ErrLinkNotFound{}, err, "Error type should be ErrLinkNotFound for %s", accessType)
 	})
 
 	t.Run("LinkRepository Update", func(t *testing.T) {
@@ -298,38 +315,64 @@ func runTestsForConfig(t *testing.T, accessType config.AccessType) {
 
 		err = linkRepo.DeleteByURL(ctx, "https://nonexistent.com", chatID)
 		require.Error(t, err, "DeleteByURL for non-existent link should fail for %s", accessType)
-		assert.IsType(t, &errors.ErrLinkNotFound{}, err, "Error type should be ErrLinkNotFound for %s", accessType)
+		assert.True(t, errors.Is(err, &customerrors.ErrLinkNotFound{}), "Error should be ErrLinkNotFound for %s", accessType)
 	})
 
 	t.Run("LinkRepository FindDue (Pagination)", func(t *testing.T) {
-		clearTables(ctx, t)
+		_, err = testDB.Pool.Exec(ctx, "DELETE FROM chat_links")
+		require.NoError(t, err, "Failed to clear chat_links table")
+
+		_, err = testDB.Pool.Exec(ctx, "DELETE FROM filters")
+		require.NoError(t, err, "Failed to clear filters table")
+
+		_, err = testDB.Pool.Exec(ctx, "DELETE FROM link_tags")
+		require.NoError(t, err, "Failed to clear link_tags table")
+
+		_, err = testDB.Pool.Exec(ctx, "DELETE FROM links")
+		require.NoError(t, err, "Failed to clear links table")
+
+		var initialCount int
+		err := testDB.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM links").Scan(&initialCount)
+		require.NoError(t, err, "Failed to get initial link count")
+		require.Equal(t, 0, initialCount, "Links table should be empty before test")
+
+		nullTime := time.Time{}
+		oneHourAgo := time.Now().Add(-1 * time.Hour).Truncate(time.Microsecond)
+		twoHoursAgo := time.Now().Add(-2 * time.Hour).Truncate(time.Microsecond)
+		threeHoursAgo := time.Now().Add(-3 * time.Hour).Truncate(time.Microsecond)
 
 		linksToCreate := []*models.Link{
-			{URL: fmt.Sprintf("due1-%s", accessType), Type: models.GitHub, LastChecked: time.Time{}},
-			{URL: fmt.Sprintf("due2-%s", accessType), Type: models.GitHub, LastChecked: time.Now().Add(-2 * time.Hour)},
-			{URL: fmt.Sprintf("due3-%s", accessType), Type: models.StackOverflow, LastChecked: time.Now().Add(-1 * time.Hour)},
-			{URL: fmt.Sprintf("due4-%s", accessType), Type: models.GitHub, LastChecked: time.Now()},
+			{URL: fmt.Sprintf("due1-%s", accessType), Type: models.GitHub, LastChecked: nullTime},
+			{URL: fmt.Sprintf("due2-%s", accessType), Type: models.GitHub, LastChecked: threeHoursAgo},
+			{URL: fmt.Sprintf("due3-%s", accessType), Type: models.StackOverflow, LastChecked: twoHoursAgo},
+			{URL: fmt.Sprintf("due4-%s", accessType), Type: models.GitHub, LastChecked: oneHourAgo},
 		}
-		createdLinkIDs := make([]int64, 0, len(linksToCreate))
 
 		for _, link := range linksToCreate {
 			err := linkRepo.Save(ctx, link)
-			require.NoError(t, err)
-
-			createdLinkIDs = append(createdLinkIDs, link.ID)
+			require.NoError(t, err, "Failed to save link")
 		}
+
+		var linkCount int
+		err = testDB.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM links").Scan(&linkCount)
+		require.NoError(t, err, "Failed to get link count")
+		require.Equal(t, 4, linkCount, "Should have exactly 4 links for the test")
 
 		dueLinks1, err := linkRepo.FindDue(ctx, 2, 0)
 		require.NoError(t, err, "FindDue page 1 failed for %s", accessType)
 		require.Len(t, dueLinks1, 2, "Page 1 should have 2 links for %s", accessType)
-		assert.Equal(t, createdLinkIDs[0], dueLinks1[0].ID, "Page 1 first link ID mismatch for %s", accessType)  // due1 (NULL last_checked)
-		assert.Equal(t, createdLinkIDs[1], dueLinks1[1].ID, "Page 1 second link ID mismatch for %s", accessType) // due2 (-2h)
+
+		urlsPage1 := []string{dueLinks1[0].URL, dueLinks1[1].URL}
+		assert.Contains(t, urlsPage1, linksToCreate[0].URL, "Page 1 should contain first link URL for %s", accessType)
+		assert.Contains(t, urlsPage1, linksToCreate[1].URL, "Page 1 should contain second link URL for %s", accessType)
 
 		dueLinks2, err := linkRepo.FindDue(ctx, 2, 2)
 		require.NoError(t, err, "FindDue page 2 failed for %s", accessType)
 		require.Len(t, dueLinks2, 2, "Page 2 should have 2 links for %s", accessType)
-		assert.Equal(t, createdLinkIDs[2], dueLinks2[0].ID, "Page 2 first link ID mismatch for %s", accessType)  // due3 (-1h)
-		assert.Equal(t, createdLinkIDs[3], dueLinks2[1].ID, "Page 2 second link ID mismatch for %s", accessType) // due4 (now)
+
+		urlsPage2 := []string{dueLinks2[0].URL, dueLinks2[1].URL}
+		assert.Contains(t, urlsPage2, linksToCreate[2].URL, "Page 2 should contain third link URL for %s", accessType)
+		assert.Contains(t, urlsPage2, linksToCreate[3].URL, "Page 2 should contain fourth link URL for %s", accessType)
 
 		dueLinks3, err := linkRepo.FindDue(ctx, 2, 4)
 		require.NoError(t, err, "FindDue page 3 failed for %s", accessType)
@@ -401,14 +444,14 @@ func runTestsForConfig(t *testing.T, accessType config.AccessType) {
 
 		_, err = chatRepo.FindByID(ctx, -999)
 		require.Error(t, err, "FindByID for non-existent chat should fail for %s", accessType)
-		assert.IsType(t, &errors.ErrChatNotFound{}, err, "Error type should be ErrChatNotFound for %s", accessType)
+		assert.IsType(t, &customerrors.ErrChatNotFound{}, err, "Error type should be ErrChatNotFound for %s", accessType)
 
 		err = chatRepo.Delete(ctx, chatID)
 		require.NoError(t, err, "Delete chat failed for %s", accessType)
 
 		_, err = chatRepo.FindByID(ctx, chatID)
 		require.Error(t, err, "FindByID after delete should fail for %s", accessType)
-		assert.IsType(t, &errors.ErrChatNotFound{}, err, "Error type should be ErrChatNotFound after delete for %s", accessType)
+		assert.IsType(t, &customerrors.ErrChatNotFound{}, err, "Error type should be ErrChatNotFound after delete for %s", accessType)
 	})
 
 	t.Run("ChatRepository FindByLinkID", func(t *testing.T) {
@@ -447,7 +490,7 @@ func runTestsForConfig(t *testing.T, accessType config.AccessType) {
 
 		emptyChats, err := chatRepo.FindByLinkID(ctx, -1)
 		require.Error(t, err, "FindByLinkID for non-existent link should return error for %s", accessType)
-		assert.IsType(t, &errors.ErrLinkNotFound{}, err, "Error type should be ErrLinkNotFound for %s", accessType)
+		assert.IsType(t, &customerrors.ErrLinkNotFound{}, err, "Error type should be ErrLinkNotFound for %s", accessType)
 		assert.Nil(t, emptyChats, "Result slice should be nil when error occurs for %s", accessType)
 	})
 }

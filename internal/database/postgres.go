@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/config"
+
 	// file driver необходим для миграций базы данных.
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
