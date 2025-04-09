@@ -21,20 +21,39 @@ services:
     networks:
       - link_tracker_network
 
-  app:
+  bot:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.bot
     restart: "no"
-    container_name: link_tracker_app
+    container_name: link_tracker_bot
+    network_mode: host
     depends_on:
       postgres:
         condition: service_healthy
       migrations:
         condition: service_completed_successfully
-    ports:
-      - "${BOT_SERVER_PORT}:8080"
-      - "${SCRAPPER_SERVER_PORT}:8081"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - BOT_BASE_URL=${BOT_BASE_URL}
+      - SCRAPPER_BASE_URL=${SCRAPPER_BASE_URL}
+      - DATABASE_ACCESS_TYPE=${DATABASE_ACCESS_TYPE}
+      - DATABASE_BATCH_SIZE=${DATABASE_BATCH_SIZE}
+      - DATABASE_MAX_CONNECTIONS=${DATABASE_MAX_CONNECTIONS}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+
+  scrapper:
+    build:
+      context: .
+      dockerfile: Dockerfile.scrapper
+    restart: "no"
+    container_name: link_tracker_scrapper
+    network_mode: host
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - BOT_BASE_URL=${BOT_BASE_URL}
@@ -44,23 +63,19 @@ services:
       - DATABASE_ACCESS_TYPE=${DATABASE_ACCESS_TYPE}
       - DATABASE_BATCH_SIZE=${DATABASE_BATCH_SIZE}
       - DATABASE_MAX_CONNECTIONS=${DATABASE_MAX_CONNECTIONS}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - GITHUB_API_TOKEN=${GITHUB_API_TOKEN}
       - STACKOVERFLOW_API_TOKEN=${STACKOVERFLOW_API_TOKEN}
-    networks:
-      - link_tracker_network
 
   migrations:
     image: migrate/migrate
     container_name: link_tracker_migrations
+    network_mode: host
     depends_on:
       postgres:
         condition: service_healthy
     command: ["-path", "/migrations", "-database", "${DATABASE_URL}", "up"]
     volumes:
       - ./migrations:/migrations
-    networks:
-      - link_tracker_network
     restart: on-failure
 
 networks:

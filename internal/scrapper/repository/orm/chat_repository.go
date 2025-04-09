@@ -470,7 +470,7 @@ func (r *ChatRepository) FindByLinkID(ctx context.Context, linkID int64) ([]*mod
 		if err != nil {
 			return nil, &customerrors.ErrSQLExecution{Operation: "чтение данных чата", Cause: err}
 		}
-		
+
 		linkIDs, err := r.getLinkIDs(ctx, chat.ID)
 		if err != nil {
 			return nil, err
