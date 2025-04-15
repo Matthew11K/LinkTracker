@@ -51,28 +51,19 @@ CREATE TABLE IF NOT EXISTS chat_links (
 CREATE INDEX IF NOT EXISTS idx_chat_links_chat_id ON chat_links(chat_id);
 CREATE INDEX IF NOT EXISTS idx_chat_links_link_id ON chat_links(link_id);
 
-CREATE TABLE IF NOT EXISTS github_details (
+CREATE TABLE IF NOT EXISTS content_details (
     id SERIAL PRIMARY KEY,
     link_id INT NOT NULL UNIQUE,
     title VARCHAR(500),
     author VARCHAR(100),
     updated_at TIMESTAMP WITH TIME ZONE,
-    description TEXT,
+    content_text TEXT,
+    link_type VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS stackoverflow_details (
-    id SERIAL PRIMARY KEY,
-    link_id INT NOT NULL UNIQUE,
-    title VARCHAR(500),
-    author VARCHAR(100),
-    updated_at TIMESTAMP WITH TIME ZONE,
-    content TEXT,
-    FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_github_details_link_id ON github_details(link_id);
-CREATE INDEX IF NOT EXISTS idx_stackoverflow_details_link_id ON stackoverflow_details(link_id);
+CREATE INDEX IF NOT EXISTS idx_content_details_link_id ON content_details(link_id);
 
 CREATE TABLE IF NOT EXISTS chat_states (
     chat_id BIGINT PRIMARY KEY,

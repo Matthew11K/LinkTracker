@@ -17,7 +17,7 @@ type StackOverflowClient struct {
 
 type QuestionUpdateGetter interface {
 	GetQuestionLastUpdate(ctx context.Context, questionID int64) (time.Time, error)
-	GetQuestionDetails(ctx context.Context, questionID int64) (*models.StackOverflowDetails, error)
+	GetQuestionDetails(ctx context.Context, questionID int64) (*models.ContentDetails, error)
 }
 
 func NewStackOverflowClient(key, baseURL string) QuestionUpdateGetter {
@@ -86,7 +86,7 @@ func (c *StackOverflowClient) GetQuestionLastUpdate(ctx context.Context, questio
 	return lastUpdate, nil
 }
 
-func (c *StackOverflowClient) GetQuestionDetails(ctx context.Context, questionID int64) (*models.StackOverflowDetails, error) {
+func (c *StackOverflowClient) GetQuestionDetails(ctx context.Context, questionID int64) (*models.ContentDetails, error) {
 	url := fmt.Sprintf("%s/questions/%d", c.baseURL, questionID)
 
 	request := c.client.R().
@@ -119,11 +119,13 @@ func (c *StackOverflowClient) GetQuestionDetails(ctx context.Context, questionID
 	}
 
 	question := response.Items[0]
-	details := &models.StackOverflowDetails{
-		Title:     question.Title,
-		Author:    question.Owner.DisplayName,
-		UpdatedAt: time.Unix(question.LastActivityDate, 0),
-		Content:   question.Body,
+	details := &models.ContentDetails{
+		LinkID:      questionID,
+		Title:       question.Title,
+		Author:      question.Owner.DisplayName,
+		UpdatedAt:   time.Unix(question.LastActivityDate, 0),
+		ContentText: question.Body,
+		LinkType:    models.StackOverflow,
 	}
 
 	return details, nil

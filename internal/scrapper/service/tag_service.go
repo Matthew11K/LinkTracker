@@ -25,7 +25,7 @@ func NewTagService(linkRepo repository.LinkRepository, chatRepo repository.ChatR
 }
 
 func (s *TagService) AddTagToLink(ctx context.Context, chatID int64, url, tag string) error {
-	chat, err := s.chatRepo.FindByID(ctx, chatID)
+	_, err := s.chatRepo.FindByID(ctx, chatID)
 	if err != nil {
 		return err
 	}
@@ -35,16 +35,12 @@ func (s *TagService) AddTagToLink(ctx context.Context, chatID int64, url, tag st
 		return err
 	}
 
-	linkFound := false
-
-	for _, linkID := range chat.Links {
-		if linkID == link.ID {
-			linkFound = true
-			break
-		}
+	exists, err := s.chatRepo.ExistsChatLink(ctx, chatID, link.ID)
+	if err != nil {
+		return err
 	}
 
-	if !linkFound {
+	if !exists {
 		return &errors.ErrLinkNotFound{URL: url}
 	}
 
@@ -70,7 +66,7 @@ func (s *TagService) AddTagToLink(ctx context.Context, chatID int64, url, tag st
 }
 
 func (s *TagService) RemoveTagFromLink(ctx context.Context, chatID int64, url, tag string) error {
-	chat, err := s.chatRepo.FindByID(ctx, chatID)
+	_, err := s.chatRepo.FindByID(ctx, chatID)
 	if err != nil {
 		return err
 	}
@@ -80,16 +76,12 @@ func (s *TagService) RemoveTagFromLink(ctx context.Context, chatID int64, url, t
 		return err
 	}
 
-	linkFound := false
-
-	for _, linkID := range chat.Links {
-		if linkID == link.ID {
-			linkFound = true
-			break
-		}
+	exists, err := s.chatRepo.ExistsChatLink(ctx, chatID, link.ID)
+	if err != nil {
+		return err
 	}
 
-	if !linkFound {
+	if !exists {
 		return &errors.ErrLinkNotFound{URL: url}
 	}
 

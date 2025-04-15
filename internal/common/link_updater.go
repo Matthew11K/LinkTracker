@@ -15,7 +15,7 @@ type LinkUpdater interface {
 
 type GitHubClient interface {
 	GetRepositoryLastUpdate(ctx context.Context, owner, repo string) (time.Time, error)
-	GetRepositoryDetails(ctx context.Context, owner, repo string) (*models.GitHubDetails, error)
+	GetRepositoryDetails(ctx context.Context, owner, repo string) (*models.ContentDetails, error)
 }
 
 type GitHubUpdater struct {
@@ -48,22 +48,19 @@ func (u *GitHubUpdater) GetUpdateDetails(ctx context.Context, url string) (*mode
 		return nil, err
 	}
 
-	textPreview := models.TextPreview(details.Description, 200)
-	fullText := details.Description
-
 	return &models.UpdateInfo{
 		Title:       details.Title,
 		Author:      details.Author,
 		UpdatedAt:   details.UpdatedAt,
 		ContentType: "repository",
-		TextPreview: textPreview,
-		FullText:    fullText,
+		TextPreview: models.TextPreview(details.ContentText, 200),
+		FullText:    details.ContentText,
 	}, nil
 }
 
 type StackOverflowClient interface {
 	GetQuestionLastUpdate(ctx context.Context, questionID int64) (time.Time, error)
-	GetQuestionDetails(ctx context.Context, questionID int64) (*models.StackOverflowDetails, error)
+	GetQuestionDetails(ctx context.Context, questionID int64) (*models.ContentDetails, error)
 }
 
 type StackOverflowUpdater struct {
@@ -96,28 +93,22 @@ func (u *StackOverflowUpdater) GetUpdateDetails(ctx context.Context, url string)
 		return nil, err
 	}
 
-	textPreview := models.TextPreview(details.Content, 200)
-	fullText := details.Content
-
 	return &models.UpdateInfo{
 		Title:       details.Title,
 		Author:      details.Author,
 		UpdatedAt:   details.UpdatedAt,
 		ContentType: "question",
-		TextPreview: textPreview,
-		FullText:    fullText,
+		TextPreview: models.TextPreview(details.ContentText, 200),
+		FullText:    details.ContentText,
 	}, nil
 }
 
 type LinkUpdaterFactory struct {
-	githubUpdater        LinkUpdater
-	stackOverflowUpdater LinkUpdater
+	githubUpdater        *GitHubUpdater
+	stackOverflowUpdater *StackOverflowUpdater
 }
 
-func NewLinkUpdaterFactory(
-	githubClient GitHubClient,
-	stackOverflowClient StackOverflowClient,
-) *LinkUpdaterFactory {
+func NewLinkUpdaterFactory(githubClient GitHubClient, stackOverflowClient StackOverflowClient) *LinkUpdaterFactory {
 	return &LinkUpdaterFactory{
 		githubUpdater:        NewGitHubUpdater(githubClient),
 		stackOverflowUpdater: NewStackOverflowUpdater(stackOverflowClient),
@@ -125,13 +116,13 @@ func NewLinkUpdaterFactory(
 }
 
 func (f *LinkUpdaterFactory) CreateUpdater(linkType models.LinkType) (LinkUpdater, error) {
-	//nolint:exhaustive // обработка models.Unknown находится в блоке default
+	//nolint:exhaustive // Unknown обрабатывается в default
 	switch linkType {
 	case models.GitHub:
 		return f.githubUpdater, nil
 	case models.StackOverflow:
 		return f.stackOverflowUpdater, nil
 	default:
-		return nil, &errors.ErrUnsupportedLinkType{URL: ""}
+		return nil, &errors.ErrUnsupportedLinkType{URL: string(linkType)}
 	}
 }

@@ -17,7 +17,6 @@ import (
 	customerrors "github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/repository"
-	"github.com/central-university-dev/go-Matthew11K/pkg/txs"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -140,13 +139,12 @@ func TestMain(m *testing.M) {
 
 func clearTables(ctx context.Context, t *testing.T) {
 	tables := []string{
+		"chat_links",
 		"chat_state_data",
 		"chat_states",
-		"stackoverflow_details",
-		"github_details",
-		"chat_links",
-		"filters",
 		"link_tags",
+		"filters",
+		"content_details",
 		"links",
 		"tags",
 		"chats",
@@ -169,8 +167,7 @@ func clearTables(ctx context.Context, t *testing.T) {
 		"links_id_seq",
 		"tags_id_seq",
 		"filters_id_seq",
-		"github_details_id_seq",
-		"stackoverflow_details_id_seq",
+		"content_details_id_seq",
 		"chat_state_data_id_seq",
 	}
 	for _, seq := range sequences {
@@ -196,8 +193,8 @@ func runTestsForConfig(t *testing.T, accessType config.AccessType) {
 		DatabaseAccessType: accessType,
 	}
 
-	txManager := txs.NewTxManager(testDB.Pool, logger)
-	factory := repository.NewFactory(testDB, testCfg, logger, txManager)
+	// Создаем фабрику репозиториев
+	factory := repository.NewFactory(testDB, testCfg, logger)
 
 	linkRepo, err := factory.CreateLinkRepository()
 	require.NoError(t, err, "Ошибка создания LinkRepository для %s", accessType)

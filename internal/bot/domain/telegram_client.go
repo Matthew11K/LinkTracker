@@ -11,7 +11,7 @@ type TelegramClientAPI interface {
 
 	GetUpdates(ctx context.Context, offset int) ([]Update, error)
 
-	SendUpdate(ctx context.Context, update interface{}) error
+	SendUpdate(ctx context.Context, update any) error
 
 	SetMyCommands(ctx context.Context, commands []BotCommand) error
 

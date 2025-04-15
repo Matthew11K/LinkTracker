@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/database"
@@ -11,82 +12,135 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 	"github.com/central-university-dev/go-Matthew11K/pkg/txs"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type LinkRepository struct {
-	db        *database.PostgresDB
-	txManager *txs.TxManager
+	db *database.PostgresDB
 }
 
-func NewLinkRepository(db *database.PostgresDB, txManager *txs.TxManager) *LinkRepository {
-	return &LinkRepository{db: db, txManager: txManager}
+func NewLinkRepository(db *database.PostgresDB) *LinkRepository {
+	return &LinkRepository{db: db}
 }
 
 func (r *LinkRepository) Save(ctx context.Context, link *models.Link) error {
-	return r.txManager.WithTransaction(ctx, func(ctx context.Context) error {
-		querier := txs.GetQuerier(ctx, r.db.Pool)
+	querier := txs.GetQuerier(ctx, r.db.Pool)
 
-		var exists bool
+	now := time.Now()
+	if link.CreatedAt.IsZero() {
+		link.CreatedAt = now
+	}
 
-		err := querier.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM links WHERE url = $1)", link.URL).Scan(&exists)
-		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "проверка существования ссылки", Cause: err}
-		}
+	var id int64
 
-		if exists {
+	err := querier.QueryRow(ctx,
+		"INSERT INTO links (url, type, last_checked, last_updated, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+		link.URL, link.Type, link.LastChecked, link.LastUpdated, link.CreatedAt).Scan(&id)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return &customerrors.ErrLinkAlreadyExists{URL: link.URL}
 		}
 
-		now := time.Now()
-		if link.CreatedAt.IsZero() {
-			link.CreatedAt = now
-		}
+		return &customerrors.ErrSQLExecution{Operation: "сохранение ссылки", Cause: err}
+	}
 
-		var id int64
+	link.ID = id
 
-		err = querier.QueryRow(ctx,
-			"INSERT INTO links (url, type, last_checked, last_updated, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-			link.URL, link.Type, link.LastChecked, link.LastUpdated, link.CreatedAt).Scan(&id)
+	if len(link.Tags) > 0 {
+		err = r.saveTags(ctx, querier, id, link.Tags)
 		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "сохранение ссылки", Cause: err}
+			return err
 		}
+	}
 
-		link.ID = id
-
-		if len(link.Tags) > 0 {
-			err = r.saveTags(ctx, querier, id, link.Tags)
-			if err != nil {
-				return err
-			}
+	if len(link.Filters) > 0 {
+		err = r.saveFilters(ctx, querier, id, link.Filters)
+		if err != nil {
+			return err
 		}
+	}
 
-		if len(link.Filters) > 0 {
-			err = r.saveFilters(ctx, querier, id, link.Filters)
-			if err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
+	return nil
 }
 
+//nolint:funlen // Функция целостная
 func (r *LinkRepository) saveTags(ctx context.Context, querier txs.Querier, linkID int64, tags []string) error {
-	for _, tag := range tags {
-		var tagID int64
+	if len(tags) == 0 {
+		return nil
+	}
 
-		err := querier.QueryRow(ctx,
-			"INSERT INTO tags (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = $1 RETURNING id",
-			tag).Scan(&tagID)
-		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "сохранение тега " + tag, Cause: err}
+	{
+		values := make([]any, 0, len(tags))
+
+		placeholders := make([]string, 0, len(tags))
+		for i, tag := range tags {
+			placeholders = append(placeholders, fmt.Sprintf("($%d)", i+1))
+			values = append(values, tag)
 		}
 
-		_, err = querier.Exec(ctx,
-			"INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-			linkID, tagID)
+		query := fmt.Sprintf("INSERT INTO tags (name) VALUES %s ON CONFLICT (name) DO NOTHING", strings.Join(placeholders, ", "))
+
+		_, err := querier.Exec(ctx, query, values...)
 		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "связывание ссылки с тегом", Cause: err}
+			return &customerrors.ErrSQLExecution{Operation: "batch-сохранение тегов", Cause: err}
+		}
+	}
+
+	{
+		var values []any
+
+		placeholders := make([]string, 0, len(tags))
+		for i, tag := range tags {
+			placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+			values = append(values, tag)
+		}
+
+		query := fmt.Sprintf("SELECT id, name FROM tags WHERE name IN (%s)", strings.Join(placeholders, ", "))
+
+		rows, err := querier.Query(ctx, query, values...)
+		if err != nil {
+			return &customerrors.ErrSQLExecution{Operation: "получение id тегов", Cause: err}
+		}
+
+		defer rows.Close()
+
+		ids := make(map[string]int64, len(tags))
+
+		for rows.Next() {
+			var id int64
+
+			var name string
+			if err := rows.Scan(&id, &name); err != nil {
+				return &customerrors.ErrSQLExecution{Operation: "сканирование id тегов", Cause: err}
+			}
+
+			ids[name] = id
+		}
+
+		if err := rows.Err(); err != nil {
+			return &customerrors.ErrSQLExecution{Operation: "чтение id тегов", Cause: err}
+		}
+
+		var linkTagValues []any
+
+		linkTagPlaceholders := make([]string, 0, len(tags))
+
+		for i, tag := range tags {
+			id, ok := ids[tag]
+			if !ok {
+				return &customerrors.ErrSQLExecution{Operation: "batch-связывание ссылки с тегом", Cause: fmt.Errorf("id не найден для тега %s", tag)}
+			}
+
+			linkTagPlaceholders = append(linkTagPlaceholders, fmt.Sprintf("($%d, $%d)", 2*i+1, 2*i+2))
+			linkTagValues = append(linkTagValues, linkID, id)
+		}
+
+		query = fmt.Sprintf("INSERT INTO link_tags (link_id, tag_id) VALUES %s ON CONFLICT DO NOTHING", strings.Join(linkTagPlaceholders, ", "))
+
+		_, err = querier.Exec(ctx, query, linkTagValues...)
+		if err != nil {
+			return &customerrors.ErrSQLExecution{Operation: "batch-связывание ссылки с тегами", Cause: err}
 		}
 	}
 
@@ -94,24 +148,57 @@ func (r *LinkRepository) saveTags(ctx context.Context, querier txs.Querier, link
 }
 
 func (r *LinkRepository) saveFilters(ctx context.Context, querier txs.Querier, linkID int64, filters []string) error {
-	for _, filter := range filters {
-		_, err := querier.Exec(ctx,
-			"INSERT INTO filters (value, link_id) VALUES ($1, $2)",
-			filter, linkID)
-		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "сохранение фильтра " + filter, Cause: err}
-		}
+	if len(filters) == 0 {
+		return nil
+	}
+
+	values := make([]any, 0, len(filters)*2)
+
+	placeholders := make([]string, 0, len(filters))
+	for i, filter := range filters {
+		placeholders = append(placeholders, fmt.Sprintf("($%d, $%d)", 2*i+1, 2*i+2))
+		values = append(values, filter, linkID)
+	}
+
+	query := fmt.Sprintf("INSERT INTO filters (value, link_id) VALUES %s", strings.Join(placeholders, ", "))
+
+	_, err := querier.Exec(ctx, query, values...)
+	if err != nil {
+		return &customerrors.ErrSQLExecution{Operation: "batch-сохранение фильтров", Cause: err}
 	}
 
 	return nil
 }
 
 func (r *LinkRepository) FindByID(ctx context.Context, id int64) (*models.Link, error) {
-	link := &models.Link{ID: id}
+	querier := txs.GetQuerier(ctx, r.db.Pool)
 
-	err := r.db.Pool.QueryRow(ctx,
-		"SELECT url, type, last_checked, last_updated, created_at FROM links WHERE id = $1",
-		id).Scan(&link.URL, &link.Type, &link.LastChecked, &link.LastUpdated, &link.CreatedAt)
+	row := querier.QueryRow(ctx, `
+		SELECT l.id, l.url, l.type, l.last_checked, l.last_updated, l.created_at,
+			COALESCE(array_agg(DISTINCT t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags,
+			COALESCE(array_agg(DISTINCT f.value) FILTER (WHERE f.value IS NOT NULL), '{}') AS filters
+		FROM links l
+		LEFT JOIN link_tags lt ON l.id = lt.link_id
+		LEFT JOIN tags t ON lt.tag_id = t.id
+		LEFT JOIN filters f ON l.id = f.link_id
+		WHERE l.id = $1
+		GROUP BY l.id
+	`, id)
+
+	var link models.Link
+
+	var tagsArr, filtersArr []string
+
+	err := row.Scan(
+		&link.ID,
+		&link.URL,
+		&link.Type,
+		&link.LastChecked,
+		&link.LastUpdated,
+		&link.CreatedAt,
+		&tagsArr,
+		&filtersArr,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &customerrors.ErrLinkNotFound{URL: "ID: " + fmt.Sprint(id)}
@@ -120,81 +207,18 @@ func (r *LinkRepository) FindByID(ctx context.Context, id int64) (*models.Link, 
 		return nil, &customerrors.ErrSQLExecution{Operation: "поиск ссылки по ID", Cause: err}
 	}
 
-	tags, err := r.getTagsByLinkID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
+	link.Tags = tagsArr
+	link.Filters = filtersArr
 
-	link.Tags = tags
-
-	filters, err := r.getFiltersByLinkID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
-	link.Filters = filters
-
-	return link, nil
-}
-
-func (r *LinkRepository) getTagsByLinkID(ctx context.Context, linkID int64) ([]string, error) {
-	rows, err := r.db.Pool.Query(ctx,
-		"SELECT t.name FROM tags t JOIN link_tags lt ON t.id = lt.tag_id WHERE lt.link_id = $1",
-		linkID)
-	if err != nil {
-		return nil, &customerrors.ErrSQLExecution{Operation: "запрос тегов", Cause: err}
-	}
-	defer rows.Close()
-
-	var tags []string
-
-	for rows.Next() {
-		var tag string
-		if err := rows.Scan(&tag); err != nil {
-			return nil, &customerrors.ErrSQLExecution{Operation: "сканирование тега", Cause: err}
-		}
-
-		tags = append(tags, tag)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, &customerrors.ErrSQLExecution{Operation: "обработка результатов запроса тегов", Cause: err}
-	}
-
-	return tags, nil
-}
-
-func (r *LinkRepository) getFiltersByLinkID(ctx context.Context, linkID int64) ([]string, error) {
-	rows, err := r.db.Pool.Query(ctx,
-		"SELECT value FROM filters WHERE link_id = $1",
-		linkID)
-	if err != nil {
-		return nil, &customerrors.ErrSQLExecution{Operation: "запрос фильтров", Cause: err}
-	}
-	defer rows.Close()
-
-	var filters []string
-
-	for rows.Next() {
-		var filter string
-		if err := rows.Scan(&filter); err != nil {
-			return nil, &customerrors.ErrSQLExecution{Operation: "сканирование фильтра", Cause: err}
-		}
-
-		filters = append(filters, filter)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, &customerrors.ErrSQLExecution{Operation: "обработка результатов запроса фильтров", Cause: err}
-	}
-
-	return filters, nil
+	return &link, nil
 }
 
 func (r *LinkRepository) FindByURL(ctx context.Context, url string) (*models.Link, error) {
+	querier := txs.GetQuerier(ctx, r.db.Pool)
+
 	var id int64
 
-	err := r.db.Pool.QueryRow(ctx, "SELECT id FROM links WHERE url = $1", url).Scan(&id)
+	err := querier.QueryRow(ctx, "SELECT id FROM links WHERE url = $1", url).Scan(&id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &customerrors.ErrLinkNotFound{URL: url}
@@ -207,43 +231,52 @@ func (r *LinkRepository) FindByURL(ctx context.Context, url string) (*models.Lin
 }
 
 func (r *LinkRepository) FindByChatID(ctx context.Context, chatID int64) ([]*models.Link, error) {
-	rows, err := r.db.Pool.Query(ctx,
-		`SELECT l.id, l.url, l.type, l.last_checked, l.last_updated, l.created_at 
-		FROM links l 
-		JOIN chat_links cl ON l.id = cl.link_id 
-		WHERE cl.chat_id = $1`,
-		chatID)
+	querier := txs.GetQuerier(ctx, r.db.Pool)
+
+	rows, err := querier.Query(ctx, `
+		SELECT l.id, l.url, l.type, l.last_checked, l.last_updated, l.created_at,
+			COALESCE(array_agg(DISTINCT t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags,
+			COALESCE(array_agg(DISTINCT f.value) FILTER (WHERE f.value IS NOT NULL), '{}') AS filters
+		FROM links l
+		JOIN chat_links cl ON l.id = cl.link_id
+		LEFT JOIN link_tags lt ON l.id = lt.link_id
+		LEFT JOIN tags t ON lt.tag_id = t.id
+		LEFT JOIN filters f ON l.id = f.link_id
+		WHERE cl.chat_id = $1
+		GROUP BY l.id
+	`, chatID)
 	if err != nil {
-		return nil, &customerrors.ErrSQLExecution{Operation: "запрос ссылок по chat_id", Cause: err}
+		return nil, &customerrors.ErrSQLExecution{Operation: "запрос ссылок по ID чата", Cause: err}
 	}
 	defer rows.Close()
 
 	var links []*models.Link
 
 	for rows.Next() {
-		link := &models.Link{}
-		if err := rows.Scan(&link.ID, &link.URL, &link.Type, &link.LastChecked, &link.LastUpdated, &link.CreatedAt); err != nil {
+		var link models.Link
+
+		var tagsArr, filtersArr []string
+
+		err := rows.Scan(
+			&link.ID,
+			&link.URL,
+			&link.Type,
+			&link.LastChecked,
+			&link.LastUpdated,
+			&link.CreatedAt,
+			&tagsArr,
+			&filtersArr,
+		)
+		if err != nil {
 			return nil, &customerrors.ErrSQLExecution{Operation: "сканирование ссылки", Cause: err}
 		}
 
-		tags, err := r.getTagsByLinkID(ctx, link.ID)
-		if err != nil {
-			return nil, err
-		}
-
-		link.Tags = tags
-
-		filters, err := r.getFiltersByLinkID(ctx, link.ID)
-		if err != nil {
-			return nil, err
-		}
-
-		link.Filters = filters
-
-		links = append(links, link)
+		link.Tags = tagsArr
+		link.Filters = filtersArr
+		links = append(links, &link)
 	}
 
-	if err := rows.Err(); err != nil {
+	if err = rows.Err(); err != nil {
 		return nil, &customerrors.ErrSQLExecution{Operation: "обработка результатов запроса ссылок", Cause: err}
 	}
 
@@ -251,290 +284,228 @@ func (r *LinkRepository) FindByChatID(ctx context.Context, chatID int64) ([]*mod
 }
 
 func (r *LinkRepository) DeleteByURL(ctx context.Context, url string, chatID int64) error {
-	return r.txManager.WithTransaction(ctx, func(ctx context.Context) error {
-		querier := txs.GetQuerier(ctx, r.db.Pool)
+	querier := txs.GetQuerier(ctx, r.db.Pool)
 
-		var linkID int64
+	var linkID int64
 
-		err := querier.QueryRow(ctx, "SELECT id FROM links WHERE url = $1", url).Scan(&linkID)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return &customerrors.ErrLinkNotFound{URL: url}
-			}
-
-			return &customerrors.ErrSQLExecution{Operation: "поиск ссылки по URL", Cause: err}
-		}
-
-		var chatLinkExists bool
-
-		err = querier.QueryRow(ctx,
-			"SELECT EXISTS(SELECT 1 FROM chat_links WHERE chat_id = $1 AND link_id = $2)",
-			chatID, linkID).Scan(&chatLinkExists)
-		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "проверка связи чата и ссылки", Cause: err}
-		}
-
-		if !chatLinkExists {
+	err := querier.QueryRow(ctx, "SELECT id FROM links WHERE url = $1", url).Scan(&linkID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return &customerrors.ErrLinkNotFound{URL: url}
 		}
 
-		_, err = querier.Exec(ctx,
-			"DELETE FROM chat_links WHERE chat_id = $1 AND link_id = $2",
-			chatID, linkID)
+		return &customerrors.ErrSQLExecution{Operation: "получение ID ссылки", Cause: err}
+	}
+
+	result, err := querier.Exec(ctx, "DELETE FROM chat_links WHERE chat_id = $1 AND link_id = $2", chatID, linkID)
+	if err != nil {
+		return &customerrors.ErrSQLExecution{Operation: "удаление связи чата с ссылкой", Cause: err}
+	}
+
+	if result.RowsAffected() == 0 {
+		return &customerrors.ErrLinkNotInChat{ChatID: chatID, LinkID: linkID}
+	}
+
+	var count int
+
+	err = querier.QueryRow(ctx, "SELECT COUNT(*) FROM chat_links WHERE link_id = $1", linkID).Scan(&count)
+	if err != nil {
+		return &customerrors.ErrSQLExecution{Operation: "проверка использования ссылки", Cause: err}
+	}
+
+	if count == 0 {
+		for _, table := range []string{"filters", "link_tags", "content_details"} {
+			_, err = querier.Exec(ctx, fmt.Sprintf("DELETE FROM %s WHERE link_id = $1", table), linkID)
+			if err != nil {
+				return &customerrors.ErrSQLExecution{Operation: "удаление данных из " + table, Cause: err}
+			}
+		}
+
+		_, err = querier.Exec(ctx, "DELETE FROM links WHERE id = $1", linkID)
 		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "удаление связи чата и ссылки", Cause: err}
+			return &customerrors.ErrSQLExecution{Operation: "удаление ссылки", Cause: err}
 		}
+	}
 
-		var chatCount int
-
-		err = querier.QueryRow(ctx,
-			"SELECT COUNT(*) FROM chat_links WHERE link_id = $1",
-			linkID).Scan(&chatCount)
-		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "подсчёт чатов для ссылки", Cause: err}
-		}
-
-		if chatCount == 0 {
-			_, err = querier.Exec(ctx,
-				"DELETE FROM link_tags WHERE link_id = $1",
-				linkID)
-			if err != nil {
-				return &customerrors.ErrSQLExecution{Operation: "удаление тегов ссылки", Cause: err}
-			}
-
-			_, err = querier.Exec(ctx,
-				"DELETE FROM filters WHERE link_id = $1",
-				linkID)
-			if err != nil {
-				return &customerrors.ErrSQLExecution{Operation: "удаление фильтров ссылки", Cause: err}
-			}
-
-			_, err = querier.Exec(ctx,
-				"DELETE FROM links WHERE id = $1",
-				linkID)
-			if err != nil {
-				return &customerrors.ErrSQLExecution{Operation: "удаление ссылки", Cause: err}
-			}
-		}
-
-		return nil
-	})
+	return nil
 }
 
 func (r *LinkRepository) Update(ctx context.Context, link *models.Link) error {
-	return r.txManager.WithTransaction(ctx, func(ctx context.Context) error {
-		querier := txs.GetQuerier(ctx, r.db.Pool)
+	querier := txs.GetQuerier(ctx, r.db.Pool)
 
-		_, err := querier.Exec(ctx,
-			"UPDATE links SET url = $1, type = $2, last_checked = $3, last_updated = $4 WHERE id = $5",
-			link.URL, link.Type, link.LastChecked, link.LastUpdated, link.ID)
-		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "обновление ссылки", Cause: err}
+	result, err := querier.Exec(ctx, `
+		UPDATE links 
+		SET url = $1, type = $2, last_checked = $3, last_updated = $4, created_at = $5
+		WHERE id = $6
+	`, link.URL, link.Type, link.LastChecked, link.LastUpdated, link.CreatedAt, link.ID)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return &customerrors.ErrLinkAlreadyExists{URL: link.URL}
 		}
 
-		if len(link.Tags) > 0 {
-			_, err = querier.Exec(ctx, "DELETE FROM link_tags WHERE link_id = $1", link.ID)
-			if err != nil {
-				return &customerrors.ErrSQLExecution{Operation: "удаление существующих тегов", Cause: err}
-			}
+		return &customerrors.ErrSQLExecution{Operation: "обновление ссылки", Cause: err}
+	}
 
-			err = r.saveTags(ctx, querier, link.ID, link.Tags)
-			if err != nil {
-				return err
-			}
-		}
+	if result.RowsAffected() == 0 {
+		return &customerrors.ErrLinkNotFound{URL: link.URL}
+	}
 
-		if len(link.Filters) > 0 {
-			_, err = querier.Exec(ctx, "DELETE FROM filters WHERE link_id = $1", link.ID)
-			if err != nil {
-				return &customerrors.ErrSQLExecution{Operation: "удаление существующих фильтров", Cause: err}
-			}
-
-			err = r.saveFilters(ctx, querier, link.ID, link.Filters)
-			if err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
+	return nil
 }
 
 func (r *LinkRepository) AddChatLink(ctx context.Context, chatID, linkID int64) error {
-	return r.txManager.WithTransaction(ctx, func(ctx context.Context) error {
-		querier := txs.GetQuerier(ctx, r.db.Pool)
+	querier := txs.GetQuerier(ctx, r.db.Pool)
 
-		var exists bool
+	_, err := querier.Exec(ctx,
+		"INSERT INTO chat_links (chat_id, link_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+		chatID, linkID)
+	if err != nil {
+		return &customerrors.ErrSQLExecution{Operation: "добавление связи чата с ссылкой", Cause: err}
+	}
 
-		err := querier.QueryRow(ctx,
-			"SELECT EXISTS(SELECT 1 FROM chat_links WHERE chat_id = $1 AND link_id = $2)",
-			chatID, linkID).Scan(&exists)
-		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "проверка существования связи", Cause: err}
-		}
-
-		if exists {
-			// Связь уже существует, ничего не делаем
-			return nil
-		}
-
-		_, err = querier.Exec(ctx,
-			"INSERT INTO chat_links (chat_id, link_id) VALUES ($1, $2)",
-			chatID, linkID)
-		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "добавление связи чата и ссылки", Cause: err}
-		}
-
-		return nil
-	})
+	return nil
 }
 
 func (r *LinkRepository) FindDue(ctx context.Context, limit, offset int) ([]*models.Link, error) {
-	var result []*models.Link
+	querier := txs.GetQuerier(ctx, r.db.Pool)
 
-	err := r.txManager.WithTransaction(ctx, func(ctx context.Context) error {
-		querier := txs.GetQuerier(ctx, r.db.Pool)
+	query := `
+		SELECT id, url, type, last_checked, last_updated, created_at 
+		FROM links 
+		ORDER BY last_checked NULLS FIRST, last_updated NULLS FIRST, created_at ASC, id ASC`
 
-		rows, err := querier.Query(ctx,
-			`SELECT id, url, type, last_checked, last_updated, created_at 
-			FROM links 
-			ORDER BY last_checked NULLS FIRST, last_updated NULLS FIRST, created_at ASC, id ASC
-			LIMIT $1 OFFSET $2`,
-			limit, offset)
-		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "запрос ссылок для проверки", Cause: err}
-		}
-		defer rows.Close()
-
-		links := make([]*models.Link, 0)
-
-		for rows.Next() {
-			link := &models.Link{}
-			if err := rows.Scan(&link.ID, &link.URL, &link.Type, &link.LastChecked, &link.LastUpdated, &link.CreatedAt); err != nil {
-				return &customerrors.ErrSQLExecution{Operation: "сканирование ссылки", Cause: err}
-			}
-
-			tags, err := r.getTagsByLinkID(ctx, link.ID)
-			if err != nil {
-				return err
-			}
-
-			link.Tags = tags
-
-			filters, err := r.getFiltersByLinkID(ctx, link.ID)
-			if err != nil {
-				return err
-			}
-
-			link.Filters = filters
-
-			links = append(links, link)
-		}
-
-		if err := rows.Err(); err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "обработка результатов запроса ссылок", Cause: err}
-		}
-
-		result = links
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", limit)
 	}
 
-	return result, nil
+	if offset > 0 {
+		query += fmt.Sprintf(" OFFSET %d", offset)
+	}
+
+	rows, err := querier.Query(ctx, query)
+	if err != nil {
+		return nil, &customerrors.ErrSQLExecution{Operation: "запрос ссылок для проверки", Cause: err}
+	}
+	defer rows.Close()
+
+	var links []*models.Link
+
+	for rows.Next() {
+		link := &models.Link{}
+
+		err := rows.Scan(
+			&link.ID,
+			&link.URL,
+			&link.Type,
+			&link.LastChecked,
+			&link.LastUpdated,
+			&link.CreatedAt,
+		)
+		if err != nil {
+			return nil, &customerrors.ErrSQLExecution{Operation: "сканирование ссылки", Cause: err}
+		}
+
+		links = append(links, link)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, &customerrors.ErrSQLExecution{Operation: "обработка результатов запроса ссылок", Cause: err}
+	}
+
+	return links, nil
 }
 
 func (r *LinkRepository) Count(ctx context.Context) (int, error) {
+	querier := txs.GetQuerier(ctx, r.db.Pool)
+
 	var count int
 
-	err := r.db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM links").Scan(&count)
+	err := querier.QueryRow(ctx, "SELECT COUNT(*) FROM links").Scan(&count)
 	if err != nil {
-		return 0, &customerrors.ErrSQLExecution{Operation: "подсчет ссылок", Cause: err}
+		return 0, &customerrors.ErrSQLExecution{Operation: "подсчёт ссылок", Cause: err}
 	}
 
 	return count, nil
 }
 
 func (r *LinkRepository) SaveTags(ctx context.Context, linkID int64, tags []string) error {
-	return r.txManager.WithTransaction(ctx, func(ctx context.Context) error {
-		querier := txs.GetQuerier(ctx, r.db.Pool)
+	querier := txs.GetQuerier(ctx, r.db.Pool)
 
-		_, err := querier.Exec(ctx, "DELETE FROM link_tags WHERE link_id = $1", linkID)
-		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "удаление существующих тегов", Cause: err}
-		}
+	_, err := querier.Exec(ctx, "DELETE FROM link_tags WHERE link_id = $1", linkID)
+	if err != nil {
+		return &customerrors.ErrSQLExecution{Operation: "удаление существующих тегов", Cause: err}
+	}
 
-		if len(tags) > 0 {
-			err = r.saveTags(ctx, querier, linkID, tags)
-			if err != nil {
-				return err
-			}
-		}
-
+	if len(tags) == 0 {
 		return nil
-	})
+	}
+
+	return r.saveTags(ctx, querier, linkID, tags)
 }
 
 func (r *LinkRepository) SaveFilters(ctx context.Context, linkID int64, filters []string) error {
-	return r.txManager.WithTransaction(ctx, func(ctx context.Context) error {
-		querier := txs.GetQuerier(ctx, r.db.Pool)
+	querier := txs.GetQuerier(ctx, r.db.Pool)
 
-		_, err := querier.Exec(ctx, "DELETE FROM filters WHERE link_id = $1", linkID)
-		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: "удаление существующих фильтров", Cause: err}
-		}
+	_, err := querier.Exec(ctx, "DELETE FROM filters WHERE link_id = $1", linkID)
+	if err != nil {
+		return &customerrors.ErrSQLExecution{Operation: "удаление существующих фильтров", Cause: err}
+	}
 
-		if len(filters) > 0 {
-			err = r.saveFilters(ctx, querier, linkID, filters)
-			if err != nil {
-				return err
-			}
-		}
-
+	if len(filters) == 0 {
 		return nil
-	})
+	}
+
+	return r.saveFilters(ctx, querier, linkID, filters)
 }
 
 func (r *LinkRepository) GetAll(ctx context.Context) ([]*models.Link, error) {
-	rows, err := r.db.Pool.Query(ctx,
-		"SELECT id, url, type, last_checked, last_updated, created_at FROM links ORDER BY id")
+	querier := txs.GetQuerier(ctx, r.db.Pool)
+
+	rows, err := querier.Query(ctx, `
+		SELECT l.id, l.url, l.type, l.last_checked, l.last_updated, l.created_at,
+			COALESCE(array_agg(DISTINCT t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags,
+			COALESCE(array_agg(DISTINCT f.value) FILTER (WHERE f.value IS NOT NULL), '{}') AS filters
+		FROM links l
+		LEFT JOIN link_tags lt ON l.id = lt.link_id
+		LEFT JOIN tags t ON lt.tag_id = t.id
+		LEFT JOIN filters f ON l.id = f.link_id
+		GROUP BY l.id
+		ORDER BY l.id
+	`)
 	if err != nil {
-		return nil, &customerrors.ErrSQLExecution{Operation: "получение всех ссылок", Cause: err}
+		return nil, &customerrors.ErrSQLExecution{Operation: "запрос всех ссылок", Cause: err}
 	}
 	defer rows.Close()
 
-	links := make([]*models.Link, 0)
+	var links []*models.Link
 
 	for rows.Next() {
-		link := &models.Link{}
+		var link models.Link
 
-		err := rows.Scan(&link.ID, &link.URL, &link.Type, &link.LastChecked, &link.LastUpdated, &link.CreatedAt)
+		var tagsArr, filtersArr []string
+
+		err := rows.Scan(
+			&link.ID,
+			&link.URL,
+			&link.Type,
+			&link.LastChecked,
+			&link.LastUpdated,
+			&link.CreatedAt,
+			&tagsArr,
+			&filtersArr,
+		)
 		if err != nil {
 			return nil, &customerrors.ErrSQLExecution{Operation: "сканирование ссылки", Cause: err}
 		}
 
-		tags, err := r.getTagsByLinkID(ctx, link.ID)
-		if err != nil {
-			return nil, err
-		}
-
-		link.Tags = tags
-
-		filters, err := r.getFiltersByLinkID(ctx, link.ID)
-		if err != nil {
-			return nil, err
-		}
-
-		link.Filters = filters
-
-		links = append(links, link)
+		link.Tags = tagsArr
+		link.Filters = filtersArr
+		links = append(links, &link)
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, &customerrors.ErrSQLExecution{Operation: "итерация по ссылкам", Cause: err}
+	if err = rows.Err(); err != nil {
+		return nil, &customerrors.ErrSQLExecution{Operation: "обработка результатов запроса ссылок", Cause: err}
 	}
 
 	return links, nil

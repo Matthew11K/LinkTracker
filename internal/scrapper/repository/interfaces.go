@@ -30,4 +30,5 @@ type ChatRepository interface {
 	RemoveLink(ctx context.Context, chatID, linkID int64) error
 	FindByLinkID(ctx context.Context, linkID int64) ([]*models.Chat, error)
 	GetAll(ctx context.Context) ([]*models.Chat, error)
+	ExistsChatLink(ctx context.Context, chatID, linkID int64) (bool, error)
 }

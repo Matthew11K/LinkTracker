@@ -16,7 +16,10 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-const maxInt32 = 1<<31 - 1
+const (
+	maxInt                = 100
+	defaultMaxConnections = 10
+)
 
 type PostgresDB struct {
 	Pool   *pgxpool.Pool
@@ -34,11 +37,18 @@ func NewPostgresDB(ctx context.Context, cfg *config.Config, logger *slog.Logger)
 
 	switch {
 	case cfg.DatabaseMaxConn <= 0:
-		maxConns = 0
-	case cfg.DatabaseMaxConn >= maxInt32:
-		maxConns = maxInt32
+		maxConns = defaultMaxConnections
+		logger.Info("Максимальное количество соединений не задано, используется значение по умолчанию",
+			"maxConnections", defaultMaxConnections)
+	case cfg.DatabaseMaxConn >= maxInt:
+		maxConns = defaultMaxConnections
+		logger.Warn("Задано слишком большое количество соединений, используется значение по умолчанию",
+			"requestedConnections", cfg.DatabaseMaxConn,
+			"maxConnections", defaultMaxConnections)
 	default:
 		maxConns = int32(cfg.DatabaseMaxConn)
+		logger.Info("Установлено максимальное количество соединений",
+			"maxConnections", maxConns)
 	}
 
 	poolConfig.MaxConns = maxConns

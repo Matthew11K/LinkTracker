@@ -13,7 +13,6 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/internal/common"
 	"github.com/central-university-dev/go-Matthew11K/internal/database"
 	clients2 "github.com/central-university-dev/go-Matthew11K/internal/scrapper/clients"
-	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/notify"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/repository"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/scheduler"
 	"github.com/central-university-dev/go-Matthew11K/pkg/txs"
@@ -23,6 +22,7 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1/v1_scrapper"
 	"github.com/central-university-dev/go-Matthew11K/internal/config"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/handler"
+	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/notify"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/service"
 	"github.com/central-university-dev/go-Matthew11K/pkg"
 )
@@ -94,11 +94,9 @@ func run() error {
 	}
 	defer db.Close()
 
-	// Создаем менеджер транзакций
 	txManager := txs.NewTxManager(db.Pool, appLogger)
 
-	// Передаем менеджер транзакций в фабрику репозиториев
-	repoFactory := repository.NewFactory(db, cfg, appLogger, txManager)
+	repoFactory := repository.NewFactory(db, cfg, appLogger)
 
 	linkRepo, err := repoFactory.CreateLinkRepository()
 	if err != nil {
@@ -118,23 +116,21 @@ func run() error {
 		return err
 	}
 
-	githubDetailsRepo, err := repoFactory.CreateGitHubDetailsRepository()
+	detailsRepo, err := repoFactory.CreateContentDetailsRepository()
 	if err != nil {
-		appLogger.Error("Ошибка при создании репозитория деталей GitHub",
+		appLogger.Error("Ошибка при создании репозитория деталей контента",
 			"error", err,
 		)
 
 		return err
 	}
 
-	stackOverflowDetailsRepo, err := repoFactory.CreateStackOverflowDetailsRepository()
-	if err != nil {
-		appLogger.Error("Ошибка при создании репозитория деталей StackOverflow",
-			"error", err,
-		)
+	updaterFactory := common.NewLinkUpdaterFactory(
+		clients2.NewGitHubClient(cfg.GitHubAPIToken, ""),
+		clients2.NewStackOverflowClient(cfg.StackOverflowAPIToken, ""),
+	)
 
-		return err
-	}
+	linkAnalyzer := common.NewLinkAnalyzer()
 
 	botNotifier, err := notify.NewHTTPBotNotifier(cfg.BotBaseURL, appLogger)
 	if err != nil {
@@ -145,21 +141,15 @@ func run() error {
 		return err
 	}
 
-	githubClient := clients2.NewGitHubClient(cfg.GitHubAPIToken, "")
-	stackoverflowClient := clients2.NewStackOverflowClient(cfg.StackOverflowAPIToken, "")
-	linkAnalyzer := common.NewLinkAnalyzer()
-
-	updaterFactory := common.NewLinkUpdaterFactory(githubClient, stackoverflowClient)
-
 	scrapperService := service.NewScrapperService(
 		linkRepo,
 		chatRepo,
 		botNotifier,
-		githubDetailsRepo,
-		stackOverflowDetailsRepo,
+		detailsRepo,
 		updaterFactory,
 		linkAnalyzer,
 		appLogger,
+		txManager,
 	)
 
 	tagService := service.NewTagService(linkRepo, chatRepo, appLogger)
@@ -195,7 +185,6 @@ func run() error {
 			appLogger,
 		)
 	} else {
-		appLogger.Info("Использование обычного шедулера")
 		appLogger.Error("Обычный шедулер больше не поддерживается в текущей конфигурации")
 
 		return fmt.Errorf("обычный шедулер больше не поддерживается в текущей конфигурации")

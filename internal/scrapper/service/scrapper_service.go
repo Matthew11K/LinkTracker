@@ -47,204 +47,294 @@ type LinkRepository interface {
 	Update(ctx context.Context, link *models.Link) error
 
 	AddChatLink(ctx context.Context, chatID int64, linkID int64) error
+
+	GetAll(ctx context.Context) ([]*models.Link, error)
 }
 
-type GitHubDetailsRepository interface {
-	Save(ctx context.Context, details *models.GitHubDetails) error
-	FindByLinkID(ctx context.Context, linkID int64) (*models.GitHubDetails, error)
-	Update(ctx context.Context, details *models.GitHubDetails) error
+type ContentDetailsRepository interface {
+	Save(ctx context.Context, details *models.ContentDetails) error
+	FindByLinkID(ctx context.Context, linkID int64) (*models.ContentDetails, error)
+	Update(ctx context.Context, details *models.ContentDetails) error
 }
 
-type StackOverflowDetailsRepository interface {
-	Save(ctx context.Context, details *models.StackOverflowDetails) error
-	FindByLinkID(ctx context.Context, linkID int64) (*models.StackOverflowDetails, error)
-	Update(ctx context.Context, details *models.StackOverflowDetails) error
+type Transactor interface {
+	WithTransaction(ctx context.Context, txFunc func(ctx context.Context) error) error
 }
 
 type ScrapperService struct {
-	linkRepo          LinkRepository
-	chatRepo          ChatRepository
-	botClient         BotNotifier
-	githubRepo        GitHubDetailsRepository
-	stackOverflowRepo StackOverflowDetailsRepository
-	linkAnalyzer      *common.LinkAnalyzer
-	updaterFactory    *common.LinkUpdaterFactory
-	logger            *slog.Logger
+	linkRepo       LinkRepository
+	chatRepo       ChatRepository
+	botClient      BotNotifier
+	detailsRepo    ContentDetailsRepository
+	linkAnalyzer   *common.LinkAnalyzer
+	updaterFactory *common.LinkUpdaterFactory
+	logger         *slog.Logger
+	txManager      Transactor
 }
 
 func NewScrapperService(
 	linkRepo LinkRepository,
 	chatRepo ChatRepository,
 	botClient BotNotifier,
-	githubRepo GitHubDetailsRepository,
-	stackOverflowRepo StackOverflowDetailsRepository,
+	detailsRepo ContentDetailsRepository,
 	updaterFactory *common.LinkUpdaterFactory,
 	linkAnalyzer *common.LinkAnalyzer,
 	logger *slog.Logger,
+	txManager Transactor,
 ) *ScrapperService {
 	return &ScrapperService{
-		linkRepo:          linkRepo,
-		chatRepo:          chatRepo,
-		botClient:         botClient,
-		githubRepo:        githubRepo,
-		stackOverflowRepo: stackOverflowRepo,
-		linkAnalyzer:      linkAnalyzer,
-		updaterFactory:    updaterFactory,
-		logger:            logger,
+		linkRepo:       linkRepo,
+		chatRepo:       chatRepo,
+		botClient:      botClient,
+		detailsRepo:    detailsRepo,
+		linkAnalyzer:   linkAnalyzer,
+		updaterFactory: updaterFactory,
+		logger:         logger,
+		txManager:      txManager,
 	}
 }
 
 func (s *ScrapperService) RegisterChat(ctx context.Context, chatID int64) error {
-	_, err := s.chatRepo.FindByID(ctx, chatID)
-	if err == nil {
-		return nil
-	}
+	return s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		chat := &models.Chat{
+			ID:        chatID,
+			Links:     []int64{},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
 
-	chat := &models.Chat{
-		ID:        chatID,
-		Links:     []int64{},
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-
-	return s.chatRepo.Save(ctx, chat)
+		return s.chatRepo.Save(ctx, chat)
+	})
 }
 
 func (s *ScrapperService) DeleteChat(ctx context.Context, chatID int64) error {
-	chat, err := s.chatRepo.FindByID(ctx, chatID)
+	return s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		chat, err := s.chatRepo.FindByID(ctx, chatID)
+		if err != nil {
+			return err
+		}
+
+		for _, linkID := range chat.Links {
+			link, err := s.linkRepo.FindByID(ctx, linkID)
+			if err != nil {
+				continue
+			}
+
+			_ = s.linkRepo.DeleteByURL(ctx, link.URL, chatID)
+		}
+
+		return s.chatRepo.Delete(ctx, chatID)
+	})
+}
+
+func (s *ScrapperService) AddLink(ctx context.Context, chatID int64, url string, tags, filters []string) (*models.Link, error) {
+	var result *models.Link
+
+	err := s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		chat, err := s.chatRepo.FindByID(ctx, chatID)
+		if err != nil {
+			return err
+		}
+
+		linkType := s.linkAnalyzer.AnalyzeLink(url)
+		if linkType == models.Unknown {
+			return &errors.ErrUnsupportedLinkType{URL: url}
+		}
+
+		existingLink, err := s.linkRepo.FindByURL(ctx, url)
+		if err == nil {
+			for _, linkID := range chat.Links {
+				if linkID == existingLink.ID {
+					return &errors.ErrLinkAlreadyExists{URL: url}
+				}
+			}
+
+			if err := s.chatRepo.AddLink(ctx, chatID, existingLink.ID); err != nil {
+				return err
+			}
+
+			if err := s.linkRepo.AddChatLink(ctx, chatID, existingLink.ID); err != nil {
+				return err
+			}
+
+			result = existingLink
+
+			return nil
+		}
+
+		link := &models.Link{
+			URL:         url,
+			Type:        linkType,
+			Tags:        tags,
+			Filters:     filters,
+			LastChecked: time.Now(),
+			LastUpdated: time.Now(),
+			CreatedAt:   time.Now(),
+		}
+
+		if err := s.linkRepo.Save(ctx, link); err != nil {
+			return err
+		}
+
+		if err := s.chatRepo.AddLink(ctx, chatID, link.ID); err != nil {
+			return err
+		}
+
+		if err := s.linkRepo.AddChatLink(ctx, chatID, link.ID); err != nil {
+			return err
+		}
+
+		result = link
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func (s *ScrapperService) RemoveLink(ctx context.Context, chatID int64, url string) (*models.Link, error) {
+	var result *models.Link
+
+	err := s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		_, err := s.chatRepo.FindByID(ctx, chatID)
+		if err != nil {
+			return err
+		}
+
+		link, err := s.linkRepo.FindByURL(ctx, url)
+		if err != nil {
+			return err
+		}
+
+		if err := s.linkRepo.DeleteByURL(ctx, url, chatID); err != nil {
+			return err
+		}
+
+		result = link
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func (s *ScrapperService) GetLinks(ctx context.Context, chatID int64) ([]*models.Link, error) {
+	var result []*models.Link
+
+	err := s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		_, err := s.chatRepo.FindByID(ctx, chatID)
+		if err != nil {
+			return err
+		}
+
+		links, err := s.linkRepo.FindByChatID(ctx, chatID)
+		if err != nil {
+			return err
+		}
+
+		result = links
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+//nolint:funlen // Функция целостная
+func (s *ScrapperService) CheckUpdates(ctx context.Context) error {
+	links, err := s.linkRepo.GetAll(ctx)
 	if err != nil {
 		return err
 	}
 
-	for _, linkID := range chat.Links {
-		link, err := s.linkRepo.FindByID(ctx, linkID)
-		if err != nil {
-			continue
-		}
-
-		_ = s.linkRepo.DeleteByURL(ctx, link.URL, chatID)
-	}
-
-	return s.chatRepo.Delete(ctx, chatID)
-}
-
-func (s *ScrapperService) AddLink(ctx context.Context, chatID int64, url string, tags, filters []string) (*models.Link, error) {
-	chat, err := s.chatRepo.FindByID(ctx, chatID)
-	if err != nil {
-		return nil, err
-	}
-
-	linkType := s.linkAnalyzer.AnalyzeLink(url)
-	if linkType == models.Unknown {
-		return nil, &errors.ErrUnsupportedLinkType{URL: url}
-	}
-
-	existingLink, err := s.linkRepo.FindByURL(ctx, url)
-	if err == nil {
-		for _, linkID := range chat.Links {
-			if linkID == existingLink.ID {
-				return nil, &errors.ErrLinkAlreadyExists{URL: url}
-			}
-		}
-
-		if err := s.chatRepo.AddLink(ctx, chatID, existingLink.ID); err != nil {
-			return nil, err
-		}
-
-		if err := s.linkRepo.AddChatLink(ctx, chatID, existingLink.ID); err != nil {
-			return nil, err
-		}
-
-		return existingLink, nil
-	}
-
-	link := &models.Link{
-		URL:         url,
-		Type:        linkType,
-		Tags:        tags,
-		Filters:     filters,
-		LastChecked: time.Now(),
-		LastUpdated: time.Now(),
-		CreatedAt:   time.Now(),
-	}
-
-	if err := s.linkRepo.Save(ctx, link); err != nil {
-		return nil, err
-	}
-
-	if err := s.chatRepo.AddLink(ctx, chatID, link.ID); err != nil {
-		return nil, err
-	}
-
-	if err := s.linkRepo.AddChatLink(ctx, chatID, link.ID); err != nil {
-		return nil, err
-	}
-
-	return link, nil
-}
-
-func (s *ScrapperService) RemoveLink(ctx context.Context, chatID int64, url string) (*models.Link, error) {
-	_, err := s.chatRepo.FindByID(ctx, chatID)
-	if err != nil {
-		return nil, err
-	}
-
-	link, err := s.linkRepo.FindByURL(ctx, url)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := s.linkRepo.DeleteByURL(ctx, url, chatID); err != nil {
-		return nil, err
-	}
-
-	return link, nil
-}
-
-func (s *ScrapperService) GetLinks(ctx context.Context, chatID int64) ([]*models.Link, error) {
-	_, err := s.chatRepo.FindByID(ctx, chatID)
-	if err != nil {
-		return nil, err
-	}
-
-	return s.linkRepo.FindByChatID(ctx, chatID)
-}
-
-//nolint:funlen // Длина функции обусловлена необходимостью последовательной обработки всех этапов проверки и обновления.
-func (s *ScrapperService) ProcessLink(ctx context.Context, link *models.Link) (bool, error) {
-	updated, err := s.checkLinkUpdate(ctx, link)
-	if err != nil {
-		return false, err
-	}
-
-	if !updated {
-		return false, nil
-	}
-
-	s.logger.Info("Обнаружено обновление ссылки, отправка уведомлений",
-		"url", link.URL,
-		"updatedAt", link.LastUpdated,
+	s.logger.Info("Начало проверки обновлений ссылок",
+		"count", len(links),
 	)
 
-	chats, err := s.chatRepo.FindByLinkID(ctx, link.ID)
-	if err != nil {
-		s.logger.Error("Ошибка при получении списка чатов для ссылки",
-			"error", err,
-			"linkID", link.ID,
-		)
+	for _, link := range links {
+		func() {
+			s.logger.Info("Проверка ссылки",
+				"linkId", link.ID,
+				"url", link.URL,
+			)
 
-		return true, err
+			isUpdated, err := s.checkLinkUpdate(ctx, link)
+			if err != nil {
+				s.logger.Error("Ошибка при проверке обновлений",
+					"error", err,
+				)
+
+				return
+			}
+
+			if !isUpdated {
+				s.logger.Info("Нет обновлений для ссылки",
+					"linkId", link.ID,
+					"url", link.URL,
+				)
+
+				return
+			}
+
+			s.logger.Info("Найдены обновления для ссылки",
+				"linkId", link.ID,
+				"url", link.URL,
+			)
+
+			chats, err := s.chatRepo.FindByLinkID(ctx, link.ID)
+			if err != nil {
+				s.logger.Error("Ошибка при получении чатов для ссылки",
+					"error", err,
+					"linkId", link.ID,
+				)
+
+				return
+			}
+
+			if len(chats) == 0 {
+				s.logger.Info("Нет чатов для уведомления",
+					"linkId", link.ID,
+				)
+
+				return
+			}
+
+			var chatIDs []int64
+
+			for _, chat := range chats {
+				chatIDs = append(chatIDs, chat.ID)
+			}
+
+			_, err = s.notifyChatsAboutUpdate(ctx, link, chatIDs)
+			if err != nil {
+				s.logger.Error("Ошибка при отправке уведомлений",
+					"error", err,
+					"linkId", link.ID,
+				)
+			}
+		}()
 	}
 
-	chatIDs := make([]int64, 0, len(chats))
-	for _, chat := range chats {
-		chatIDs = append(chatIDs, chat.ID)
-	}
+	return nil
+}
 
-	if len(chatIDs) == 0 {
-		s.logger.Info("Нет подписчиков для уведомления об обновлении ссылки", "linkID", link.ID)
-		return true, nil
-	}
+func (s *ScrapperService) notifyChatsAboutUpdate(ctx context.Context, link *models.Link, chatIDs []int64) (bool, error) {
+	s.logger.Info("Отправка уведомления об обновлении",
+		"linkId", link.ID,
+		"chatsCount", len(chatIDs),
+	)
 
 	updater, err := s.updaterFactory.CreateUpdater(link.Type)
 	if err != nil {
@@ -267,7 +357,10 @@ func (s *ScrapperService) ProcessLink(ctx context.Context, link *models.Link) (b
 	}
 
 	if updateInfo != nil {
-		s.saveDetailsToRepository(ctx, link, updateInfo)
+		err = s.saveDetailsToRepository(ctx, link, updateInfo)
+		if err != nil {
+			return true, err
+		}
 	}
 
 	var description string
@@ -306,65 +399,32 @@ func (s *ScrapperService) ProcessLink(ctx context.Context, link *models.Link) (b
 	return true, nil
 }
 
-func (s *ScrapperService) saveDetailsToRepository(ctx context.Context, link *models.Link, info *models.UpdateInfo) {
-	//nolint:exhaustive // models.Unknown не требует сохранения деталей
-	switch link.Type {
-	case models.GitHub:
-		details := &models.GitHubDetails{
+func (s *ScrapperService) saveDetailsToRepository(ctx context.Context, link *models.Link, info *models.UpdateInfo) error {
+	return s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		details := &models.ContentDetails{
 			LinkID:      link.ID,
 			Title:       info.Title,
 			Author:      info.Author,
 			UpdatedAt:   info.UpdatedAt,
-			Description: info.FullText,
+			ContentText: info.FullText,
+			LinkType:    link.Type,
 		}
 
-		existingDetails, err := s.githubRepo.FindByLinkID(ctx, link.ID)
-		if err == nil {
-			details.LinkID = existingDetails.LinkID
-			if err := s.githubRepo.Update(ctx, details); err != nil {
-				s.logger.Error("Ошибка при обновлении деталей GitHub",
-					"error", err,
-					"linkID", link.ID,
-				)
-			}
-		} else {
-			if err := s.githubRepo.Save(ctx, details); err != nil {
-				s.logger.Error("Ошибка при сохранении деталей GitHub",
-					"error", err,
-					"linkID", link.ID,
-				)
-			}
+		if err := s.detailsRepo.Save(ctx, details); err != nil {
+			s.logger.Error("Ошибка при сохранении деталей контента",
+				"error", err,
+				"linkID", link.ID,
+				"type", link.Type,
+			)
+
+			return err
 		}
 
-	case models.StackOverflow:
-		details := &models.StackOverflowDetails{
-			LinkID:    link.ID,
-			Title:     info.Title,
-			Author:    info.Author,
-			UpdatedAt: info.UpdatedAt,
-			Content:   info.FullText,
-		}
-
-		existingDetails, err := s.stackOverflowRepo.FindByLinkID(ctx, link.ID)
-		if err == nil {
-			details.LinkID = existingDetails.LinkID
-			if err := s.stackOverflowRepo.Update(ctx, details); err != nil {
-				s.logger.Error("Ошибка при обновлении деталей StackOverflow",
-					"error", err,
-					"linkID", link.ID,
-				)
-			}
-		} else {
-			if err := s.stackOverflowRepo.Save(ctx, details); err != nil {
-				s.logger.Error("Ошибка при сохранении деталей StackOverflow",
-					"error", err,
-					"linkID", link.ID,
-				)
-			}
-		}
-	}
+		return nil
+	})
 }
 
+//nolint:funlen // Функция целостная
 func (s *ScrapperService) checkLinkUpdate(ctx context.Context, link *models.Link) (bool, error) {
 	updater, err := s.updaterFactory.CreateUpdater(link.Type)
 	if err != nil {
@@ -401,7 +461,10 @@ func (s *ScrapperService) checkLinkUpdate(ctx context.Context, link *models.Link
 
 		link.LastUpdated = lastUpdate
 
-		if err := s.linkRepo.Update(ctx, link); err != nil {
+		err := s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+			return s.linkRepo.Update(ctx, link)
+		})
+		if err != nil {
 			return false, err
 		}
 
@@ -417,7 +480,10 @@ func (s *ScrapperService) checkLinkUpdate(ctx context.Context, link *models.Link
 
 		link.LastUpdated = lastUpdate
 
-		if err := s.linkRepo.Update(ctx, link); err != nil {
+		err := s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+			return s.linkRepo.Update(ctx, link)
+		})
+		if err != nil {
 			return false, err
 		}
 
@@ -428,9 +494,50 @@ func (s *ScrapperService) checkLinkUpdate(ctx context.Context, link *models.Link
 		"url", link.URL,
 	)
 
-	if err := s.linkRepo.Update(ctx, link); err != nil {
+	err = s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		return s.linkRepo.Update(ctx, link)
+	})
+	if err != nil {
 		return false, err
 	}
 
 	return false, nil
+}
+
+func (s *ScrapperService) ProcessLink(ctx context.Context, link *models.Link) (bool, error) {
+	updated, err := s.checkLinkUpdate(ctx, link)
+	if err != nil {
+		return false, err
+	}
+
+	if !updated {
+		return false, nil
+	}
+
+	s.logger.Info("Обнаружено обновление ссылки, отправка уведомлений",
+		"url", link.URL,
+		"updatedAt", link.LastUpdated,
+	)
+
+	chats, err := s.chatRepo.FindByLinkID(ctx, link.ID)
+	if err != nil {
+		s.logger.Error("Ошибка при получении списка чатов для ссылки",
+			"error", err,
+			"linkID", link.ID,
+		)
+
+		return true, err
+	}
+
+	chatIDs := make([]int64, 0, len(chats))
+	for _, chat := range chats {
+		chatIDs = append(chatIDs, chat.ID)
+	}
+
+	if len(chatIDs) == 0 {
+		s.logger.Info("Нет подписчиков для уведомления об обновлении ссылки", "linkID", link.ID)
+		return true, nil
+	}
+
+	return s.notifyChatsAboutUpdate(ctx, link, chatIDs)
 }

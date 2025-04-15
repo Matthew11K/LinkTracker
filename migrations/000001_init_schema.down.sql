@@ -2,10 +2,8 @@ DROP INDEX IF EXISTS idx_chat_state_data_chat_id;
 DROP TABLE IF EXISTS chat_state_data;
 DROP TABLE IF EXISTS chat_states;
 
-DROP INDEX IF EXISTS idx_stackoverflow_details_link_id;
-DROP TABLE IF EXISTS stackoverflow_details;
-DROP INDEX IF EXISTS idx_github_details_link_id;
-DROP TABLE IF EXISTS github_details;
+DROP INDEX IF EXISTS idx_content_details_link_id;
+DROP TABLE IF EXISTS content_details;
 
 DROP INDEX IF EXISTS idx_chat_links_chat_id;
 DROP INDEX IF EXISTS idx_chat_links_link_id;

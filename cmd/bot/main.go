@@ -116,7 +116,8 @@ func run() error {
 	defer db.Close()
 
 	txManager := txs.NewTxManager(db.Pool, appLogger)
-	repoFactory := repository.NewFactory(db, cfg, appLogger, txManager)
+
+	repoFactory := repository.NewFactory(db, cfg, appLogger)
 
 	chatStateRepo, err := repoFactory.CreateChatStateRepository()
 	if err != nil {
@@ -146,6 +147,7 @@ func run() error {
 		scrapperClient,
 		telegramClient,
 		linkAnalyzer,
+		txManager,
 	)
 
 	botHandler := bothandler.NewBotHandler(botService)

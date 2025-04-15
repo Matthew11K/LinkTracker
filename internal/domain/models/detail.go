@@ -2,20 +2,13 @@ package models
 
 import "time"
 
-type GitHubDetails struct {
+type ContentDetails struct {
 	LinkID      int64
 	Title       string
 	Author      string
 	UpdatedAt   time.Time
-	Description string
-}
-
-type StackOverflowDetails struct {
-	LinkID    int64
-	Title     string
-	Author    string
-	UpdatedAt time.Time
-	Content   string
+	ContentText string
+	LinkType    LinkType
 }
 
 func TextPreview(text string, length int) string {

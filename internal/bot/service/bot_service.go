@@ -10,7 +10,6 @@ import (
 
 	"github.com/central-university-dev/go-Matthew11K/internal/bot/domain"
 	commonservice "github.com/central-university-dev/go-Matthew11K/internal/common"
-
 	domainerrors "github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
 )
 
@@ -19,9 +18,9 @@ type ChatStateRepository interface {
 
 	SetState(ctx context.Context, chatID int64, state models.ChatState) error
 
-	GetData(ctx context.Context, chatID int64, key string) (interface{}, error)
+	GetData(ctx context.Context, chatID int64, key string) (any, error)
 
-	SetData(ctx context.Context, chatID int64, key string, value interface{}) error
+	SetData(ctx context.Context, chatID int64, key string, value any) error
 
 	ClearData(ctx context.Context, chatID int64) error
 }
@@ -38,11 +37,16 @@ type ScrapperClient interface {
 	GetLinks(ctx context.Context, chatID int64) ([]*models.Link, error)
 }
 
+type Transactor interface {
+	WithTransaction(ctx context.Context, txFunc func(ctx context.Context) error) error
+}
+
 type BotService struct {
 	chatStateRepo  ChatStateRepository
 	scrapperClient ScrapperClient
 	telegramClient domain.TelegramClientAPI
 	linkAnalyzer   *commonservice.LinkAnalyzer
+	txManager      Transactor
 }
 
 func NewBotService(
@@ -50,12 +54,14 @@ func NewBotService(
 	scrapperClient ScrapperClient,
 	telegramClient domain.TelegramClientAPI,
 	linkAnalyzer *commonservice.LinkAnalyzer,
+	txManager Transactor,
 ) *BotService {
 	return &BotService{
 		chatStateRepo:  chatStateRepo,
 		scrapperClient: scrapperClient,
 		telegramClient: telegramClient,
 		linkAnalyzer:   linkAnalyzer,
+		txManager:      txManager,
 	}
 }
 
@@ -105,11 +111,19 @@ func (s *BotService) SendLinkUpdate(ctx context.Context, update *models.LinkUpda
 }
 
 func (s *BotService) handleStartCommand(ctx context.Context, command *models.Command) (string, error) {
-	if err := s.scrapperClient.RegisterChat(ctx, command.ChatID); err != nil {
-		return "", err
-	}
+	err := s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		if err := s.scrapperClient.RegisterChat(ctx, command.ChatID); err != nil {
+			return err
+		}
 
-	if err := s.chatStateRepo.SetState(ctx, command.ChatID, models.StateIdle); err != nil {
+		if err := s.chatStateRepo.SetState(ctx, command.ChatID, models.StateIdle); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
 		return "", err
 	}
 
@@ -117,7 +131,11 @@ func (s *BotService) handleStartCommand(ctx context.Context, command *models.Com
 }
 
 func (s *BotService) handleHelpCommand(ctx context.Context, command *models.Command) (string, error) {
-	if err := s.chatStateRepo.SetState(ctx, command.ChatID, models.StateIdle); err != nil {
+	err := s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		return s.setStateWithEnsureChat(ctx, command.ChatID, models.StateIdle)
+	})
+
+	if err != nil {
 		return "", err
 	}
 
@@ -130,11 +148,19 @@ func (s *BotService) handleHelpCommand(ctx context.Context, command *models.Comm
 }
 
 func (s *BotService) handleTrackCommand(ctx context.Context, command *models.Command) (string, error) {
-	if err := s.chatStateRepo.SetState(ctx, command.ChatID, models.StateAwaitingLink); err != nil {
-		return "", err
-	}
+	err := s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		if err := s.setStateWithEnsureChat(ctx, command.ChatID, models.StateAwaitingLink); err != nil {
+			return err
+		}
 
-	if err := s.chatStateRepo.ClearData(ctx, command.ChatID); err != nil {
+		if err := s.clearDataWithEnsureChat(ctx, command.ChatID); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
 		return "", err
 	}
 
@@ -142,11 +168,19 @@ func (s *BotService) handleTrackCommand(ctx context.Context, command *models.Com
 }
 
 func (s *BotService) handleUntrackCommand(ctx context.Context, command *models.Command) (string, error) {
-	if err := s.chatStateRepo.SetState(ctx, command.ChatID, models.StateAwaitingUntrackLink); err != nil {
-		return "", err
-	}
+	err := s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		if err := s.setStateWithEnsureChat(ctx, command.ChatID, models.StateAwaitingUntrackLink); err != nil {
+			return err
+		}
 
-	if err := s.chatStateRepo.ClearData(ctx, command.ChatID); err != nil {
+		if err := s.clearDataWithEnsureChat(ctx, command.ChatID); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
 		return "", err
 	}
 
@@ -184,11 +218,19 @@ func (s *BotService) handleLinkInput(ctx context.Context, chatID int64, text str
 		return "Неподдерживаемый тип ссылки. Пожалуйста, введите ссылку на GitHub репозиторий или вопрос StackOverflow:", nil
 	}
 
-	if err := s.chatStateRepo.SetData(ctx, chatID, "link", text); err != nil {
-		return "", err
-	}
+	err := s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		if err := s.setDataWithEnsureChat(ctx, chatID, "link", text); err != nil {
+			return err
+		}
 
-	if err := s.chatStateRepo.SetState(ctx, chatID, models.StateAwaitingTags); err != nil {
+		if err := s.setStateWithEnsureChat(ctx, chatID, models.StateAwaitingTags); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
 		return "", err
 	}
 
@@ -202,11 +244,19 @@ func (s *BotService) handleTagsInput(ctx context.Context, chatID int64, text str
 		tags = strings.Fields(text)
 	}
 
-	if err := s.chatStateRepo.SetData(ctx, chatID, "tags", tags); err != nil {
-		return "", err
-	}
+	err := s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		if err := s.setDataWithEnsureChat(ctx, chatID, "tags", tags); err != nil {
+			return err
+		}
 
-	if err := s.chatStateRepo.SetState(ctx, chatID, models.StateAwaitingFilters); err != nil {
+		if err := s.setStateWithEnsureChat(ctx, chatID, models.StateAwaitingFilters); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
 		return "", err
 	}
 
@@ -216,28 +266,48 @@ func (s *BotService) handleTagsInput(ctx context.Context, chatID int64, text str
 func (s *BotService) handleFiltersInput(ctx context.Context, chatID int64, text string) (string, error) {
 	var filters []string
 
+	var link string
+
+	var tags []string
+
 	if !strings.EqualFold(text, "нет") {
 		filters = strings.Fields(text)
 	}
 
-	linkInterface, err := s.chatStateRepo.GetData(ctx, chatID, "link")
+	err := s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		linkInterface, err := s.chatStateRepo.GetData(ctx, chatID, "link")
+		if err != nil {
+			return err
+		}
+
+		linkStr, ok := linkInterface.(string)
+		if !ok {
+			return fmt.Errorf("некорректный тип данных для ссылки")
+		}
+
+		link = linkStr
+
+		tagsInterface, err := s.chatStateRepo.GetData(ctx, chatID, "tags")
+		if err != nil {
+			return err
+		}
+
+		tagsSlice, ok := tagsInterface.([]string)
+		if !ok {
+			tagsSlice = []string{}
+		}
+
+		tags = tagsSlice
+
+		if err := s.setStateWithEnsureChat(ctx, chatID, models.StateIdle); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
 		return "", err
-	}
-
-	link, ok := linkInterface.(string)
-	if !ok {
-		return "", fmt.Errorf("некорректный тип данных для ссылки")
-	}
-
-	tagsInterface, err := s.chatStateRepo.GetData(ctx, chatID, "tags")
-	if err != nil {
-		return "", err
-	}
-
-	tags, ok := tagsInterface.([]string)
-	if !ok {
-		tags = []string{}
 	}
 
 	_, err = s.scrapperClient.AddLink(ctx, chatID, link, tags, filters)
@@ -250,31 +320,83 @@ func (s *BotService) handleFiltersInput(ctx context.Context, chatID int64, text 
 		return "", err
 	}
 
-	if err := s.chatStateRepo.SetState(ctx, chatID, models.StateIdle); err != nil {
-		return "", err
-	}
-
-	if err := s.chatStateRepo.ClearData(ctx, chatID); err != nil {
-		return "", err
-	}
-
-	return fmt.Sprintf("Ссылка %s добавлена для отслеживания!", link), nil
+	return "Ссылка успешно добавлена для отслеживания!", nil
 }
 
 func (s *BotService) handleUntrackLinkInput(ctx context.Context, chatID int64, text string) (string, error) {
-	_, err := s.scrapperClient.RemoveLink(ctx, chatID, text)
+	err := s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		return s.setStateWithEnsureChat(ctx, chatID, models.StateIdle)
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	_, err = s.scrapperClient.RemoveLink(ctx, chatID, text)
 	if err != nil {
 		var linkNotFoundErr *domainerrors.ErrLinkNotFound
 		if errors.As(err, &linkNotFoundErr) {
-			return "Ссылка не найдена или не отслеживается.", nil
+			return "Указанная ссылка не отслеживается.", nil
 		}
 
 		return "", err
 	}
 
-	if err := s.chatStateRepo.SetState(ctx, chatID, models.StateIdle); err != nil {
-		return "", err
+	return "Отслеживание ссылки прекращено.", nil
+}
+
+func (s *BotService) setStateWithEnsureChat(ctx context.Context, chatID int64, state models.ChatState) error {
+	err := s.chatStateRepo.SetState(ctx, chatID, state)
+	if isForeignKeyOrNotFoundErr(err) {
+		if regErr := s.scrapperClient.RegisterChat(ctx, chatID); regErr != nil {
+			return regErr
+		}
+
+		err = s.chatStateRepo.SetState(ctx, chatID, state)
 	}
 
-	return fmt.Sprintf("Прекращено отслеживание ссылки %s.", text), nil
+	return err
+}
+
+func (s *BotService) setDataWithEnsureChat(ctx context.Context, chatID int64, key string, value any) error {
+	err := s.chatStateRepo.SetData(ctx, chatID, key, value)
+	if isForeignKeyOrNotFoundErr(err) {
+		if regErr := s.scrapperClient.RegisterChat(ctx, chatID); regErr != nil {
+			return regErr
+		}
+
+		err = s.chatStateRepo.SetData(ctx, chatID, key, value)
+	}
+
+	return err
+}
+
+func (s *BotService) clearDataWithEnsureChat(ctx context.Context, chatID int64) error {
+	err := s.chatStateRepo.ClearData(ctx, chatID)
+	if isForeignKeyOrNotFoundErr(err) {
+		if regErr := s.scrapperClient.RegisterChat(ctx, chatID); regErr != nil {
+			return regErr
+		}
+
+		err = s.chatStateRepo.ClearData(ctx, chatID)
+	}
+
+	return err
+}
+
+func isForeignKeyOrNotFoundErr(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var sqlErr *domainerrors.ErrSQLExecution
+	if errors.As(err, &sqlErr) {
+		if strings.Contains(sqlErr.Operation, "сохранение состояния чата") ||
+			strings.Contains(sqlErr.Operation, "сохранение данных чата") ||
+			strings.Contains(sqlErr.Operation, "удаление данных чата") {
+			return true
+		}
+	}
+
+	return false
 }

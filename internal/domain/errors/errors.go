@@ -199,3 +199,16 @@ type ErrLinkNotInChat struct {
 func (e *ErrLinkNotInChat) Error() string {
 	return fmt.Sprintf("ссылка c ID %d не найдена в чате c ID %d", e.LinkID, e.ChatID)
 }
+
+type ErrChatStateNotFound struct {
+	ChatID int64
+}
+
+func (e *ErrChatStateNotFound) Error() string {
+	return fmt.Sprintf("состояние чата не найдено: %d", e.ChatID)
+}
+
+func (e *ErrChatStateNotFound) Is(target error) bool {
+	_, ok := target.(*ErrChatStateNotFound)
+	return ok
+}

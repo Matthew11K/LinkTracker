@@ -35,7 +35,7 @@ func (c *TelegramClient) SetBaseURL(url string) {
 	}
 }
 
-func (c *TelegramClient) SendUpdate(_ context.Context, update interface{}) error {
+func (c *TelegramClient) SendUpdate(_ context.Context, update any) error {
 	if c.bot == nil {
 		return fmt.Errorf("telegram клиент не инициализирован")
 	}

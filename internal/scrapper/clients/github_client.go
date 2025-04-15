@@ -17,7 +17,7 @@ type GitHubClient struct {
 
 type RepositoryUpdateGetter interface {
 	GetRepositoryLastUpdate(ctx context.Context, owner, repo string) (time.Time, error)
-	GetRepositoryDetails(ctx context.Context, owner, repo string) (*models.GitHubDetails, error)
+	GetRepositoryDetails(ctx context.Context, owner, repo string) (*models.ContentDetails, error)
 }
 
 func NewGitHubClient(token, baseURL string) RepositoryUpdateGetter {
@@ -75,7 +75,7 @@ func (c *GitHubClient) GetRepositoryLastUpdate(ctx context.Context, owner, repo 
 	return repository.UpdatedAt, nil
 }
 
-func (c *GitHubClient) GetRepositoryDetails(ctx context.Context, owner, repo string) (*models.GitHubDetails, error) {
+func (c *GitHubClient) GetRepositoryDetails(ctx context.Context, owner, repo string) (*models.ContentDetails, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, owner, repo)
 
 	request := c.client.R().
@@ -100,11 +100,12 @@ func (c *GitHubClient) GetRepositoryDetails(ctx context.Context, owner, repo str
 		return nil, fmt.Errorf("GitHub API вернул статус: %d", resp.StatusCode())
 	}
 
-	details := &models.GitHubDetails{
+	details := &models.ContentDetails{
 		Title:       repository.FullName,
 		Author:      repository.Owner.Login,
 		UpdatedAt:   repository.UpdatedAt,
-		Description: repository.Description,
+		ContentText: repository.Description,
+		LinkType:    models.GitHub,
 	}
 
 	return details, nil
