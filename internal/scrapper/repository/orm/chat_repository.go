@@ -101,29 +101,6 @@ func (r *ChatRepository) FindByID(ctx context.Context, id int64) (*models.Chat, 
 func (r *ChatRepository) Delete(ctx context.Context, id int64) error {
 	querier := txs.GetQuerier(ctx, r.db.Pool)
 
-	tablesInfo := []struct {
-		tableName string
-		operation string
-	}{
-		{"chat_links", "удаление связей чата"},
-		{"chat_states", "удаление состояний чата"},
-		{"chat_state_data", "удаление данных состояний чата"},
-	}
-
-	for _, tableInfo := range tablesInfo {
-		deleteQuery := r.sq.Delete(tableInfo.tableName).Where(sq.Eq{"chat_id": id})
-
-		query, args, err := deleteQuery.ToSql()
-		if err != nil {
-			return &customerrors.ErrBuildSQLQuery{Operation: tableInfo.operation, Cause: err}
-		}
-
-		_, err = querier.Exec(ctx, query, args...)
-		if err != nil {
-			return &customerrors.ErrSQLExecution{Operation: tableInfo.operation, Cause: err}
-		}
-	}
-
 	deleteChatQuery := r.sq.Delete("chats").Where(sq.Eq{"id": id})
 
 	query, args, err := deleteChatQuery.ToSql()

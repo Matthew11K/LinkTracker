@@ -314,13 +314,6 @@ func (r *LinkRepository) DeleteByURL(ctx context.Context, url string, chatID int
 	}
 
 	if count == 0 {
-		for _, table := range []string{"filters", "link_tags", "content_details"} {
-			_, err = querier.Exec(ctx, fmt.Sprintf("DELETE FROM %s WHERE link_id = $1", table), linkID)
-			if err != nil {
-				return &customerrors.ErrSQLExecution{Operation: "удаление данных из " + table, Cause: err}
-			}
-		}
-
 		_, err = querier.Exec(ctx, "DELETE FROM links WHERE id = $1", linkID)
 		if err != nil {
 			return &customerrors.ErrSQLExecution{Operation: "удаление ссылки", Cause: err}
