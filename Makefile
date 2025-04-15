@@ -19,7 +19,7 @@ build_scrapper:
 ## test: run all tests
 .PHONY: test
 test:
-	@go test -coverpkg='github.com/es-debug/backend-academy-2024-go-template/...' --race -count=1 -coverprofile='$(COVERAGE_FILE)' ./...
+	@go test -coverpkg='github.com/central-university-dev/go-Matthew11K/...' --race -count=1 -coverprofile='$(COVERAGE_FILE)' ./...
 	@go tool cover -func='$(COVERAGE_FILE)' | grep ^total | tr -s '\t'
 
 .PHONY: lint
@@ -51,13 +51,16 @@ generate_proto:
 
 .PHONY: generate_openapi
 generate_openapi:
-	@if ! command -v 'oapi-codegen' &> /dev/null; then \
-		echo "Please install oapi-codegen!"; exit 1; \
+	@if ! command -v 'ogen' &> /dev/null; then \
+		echo "Please install ogen!"; exit 1; \
 	fi;
 	@mkdir -p internal/api/openapi/v1
-	@oapi-codegen -package v1 \
-		-generate server,types \
-		api/openapi/v1/service.yaml > internal/api/openapi/v1/service.gen.go
+	@ogen -package v1_bot \
+		-target internal/api/openapi/v1_bot \
+		api/openapi/v1/bot-api.yaml
+	@ogen -package v1_scrapper \
+		-target internal/api/openapi/v1_scrapper \
+		api/openapi/v1/scrapper-api.yaml
 
 .PHONY: clean
 clean:

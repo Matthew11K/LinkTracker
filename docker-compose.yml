@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    restart: "no"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - link_tracker_network
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    restart: "no"
+    container_name: link_tracker_bot
+    network_mode: host
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - BOT_BASE_URL=${BOT_BASE_URL}
+      - SCRAPPER_BASE_URL=${SCRAPPER_BASE_URL}
+      - DATABASE_ACCESS_TYPE=${DATABASE_ACCESS_TYPE}
+      - DATABASE_BATCH_SIZE=${DATABASE_BATCH_SIZE}
+      - DATABASE_MAX_CONNECTIONS=${DATABASE_MAX_CONNECTIONS}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+
+  scrapper:
+    build:
+      context: .
+      dockerfile: Dockerfile.scrapper
+    restart: "no"
+    container_name: link_tracker_scrapper
+    network_mode: host
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - BOT_BASE_URL=${BOT_BASE_URL}
+      - SCRAPPER_BASE_URL=${SCRAPPER_BASE_URL}
+      - SCHEDULER_CHECK_INTERVAL=${SCHEDULER_CHECK_INTERVAL}
+      - USE_PARALLEL_SCHEDULER=${USE_PARALLEL_SCHEDULER}
+      - DATABASE_ACCESS_TYPE=${DATABASE_ACCESS_TYPE}
+      - DATABASE_BATCH_SIZE=${DATABASE_BATCH_SIZE}
+      - DATABASE_MAX_CONNECTIONS=${DATABASE_MAX_CONNECTIONS}
+      - GITHUB_API_TOKEN=${GITHUB_API_TOKEN}
+      - STACKOVERFLOW_API_TOKEN=${STACKOVERFLOW_API_TOKEN}
+
+  migrations:
+    image: migrate/migrate
+    container_name: link_tracker_migrations
+    network_mode: host
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["-path", "/migrations", "-database", "${DATABASE_URL}", "up"]
+    volumes:
+      - ./migrations:/migrations
+    restart: on-failure
+
+networks:
+  link_tracker_network:
+    driver: bridge
+
+volumes:
+  postgres_data: 
