@@ -212,3 +212,11 @@ func (e *ErrChatStateNotFound) Is(target error) bool {
 	_, ok := target.(*ErrChatStateNotFound)
 	return ok
 }
+
+const (
+	OpGetChatState       = "get_chat_state"
+	OpSetChatState       = "set_chat_state"
+	OpGetChatStateData   = "get_chat_state_data"
+	OpSetChatStateData   = "set_chat_state_data"
+	OpClearChatStateData = "clear_chat_state_data"
+)

@@ -391,9 +391,8 @@ func isForeignKeyOrNotFoundErr(err error) bool {
 
 	var sqlErr *domainerrors.ErrSQLExecution
 	if errors.As(err, &sqlErr) {
-		if strings.Contains(sqlErr.Operation, "сохранение состояния чата") ||
-			strings.Contains(sqlErr.Operation, "сохранение данных чата") ||
-			strings.Contains(sqlErr.Operation, "удаление данных чата") {
+		switch sqlErr.Operation {
+		case domainerrors.OpSetChatState, domainerrors.OpSetChatStateData, domainerrors.OpClearChatStateData:
 			return true
 		}
 	}

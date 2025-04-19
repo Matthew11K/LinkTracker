@@ -32,7 +32,7 @@ func (r *ChatStateRepository) GetState(ctx context.Context, chatID int64) (model
 			return models.StateIdle, &customerrors.ErrChatStateNotFound{ChatID: chatID}
 		}
 
-		return models.StateIdle, &customerrors.ErrSQLExecution{Operation: "получение состояния чата", Cause: err}
+		return models.StateIdle, &customerrors.ErrSQLExecution{Operation: customerrors.OpGetChatState, Cause: err}
 	}
 
 	return models.ChatState(state), nil
@@ -51,7 +51,7 @@ func (r *ChatStateRepository) SetState(ctx context.Context, chatID int64, state 
 			updated_at = $4
 	`, chatID, int(state), now, now)
 	if err != nil {
-		return &customerrors.ErrSQLExecution{Operation: "сохранение состояния чата", Cause: err}
+		return &customerrors.ErrSQLExecution{Operation: customerrors.OpSetChatState, Cause: err}
 	}
 
 	return nil
@@ -69,7 +69,7 @@ func (r *ChatStateRepository) GetData(ctx context.Context, chatID int64, key str
 			return nil, &customerrors.ErrChatStateNotFound{ChatID: chatID}
 		}
 
-		return nil, &customerrors.ErrSQLExecution{Operation: "получение данных чата", Cause: err}
+		return nil, &customerrors.ErrSQLExecution{Operation: customerrors.OpGetChatStateData, Cause: err}
 	}
 
 	var value any
@@ -100,7 +100,7 @@ func (r *ChatStateRepository) SetData(ctx context.Context, chatID int64, key str
 			updated_at = EXCLUDED.updated_at
 	`, chatID, key, string(valueJSON), now, now)
 	if err != nil {
-		return &customerrors.ErrSQLExecution{Operation: "сохранение данных чата", Cause: err}
+		return &customerrors.ErrSQLExecution{Operation: customerrors.OpSetChatStateData, Cause: err}
 	}
 
 	return nil
@@ -111,7 +111,7 @@ func (r *ChatStateRepository) ClearData(ctx context.Context, chatID int64) error
 
 	_, err := querier.Exec(ctx, "DELETE FROM chat_state_data WHERE chat_id = $1", chatID)
 	if err != nil {
-		return &customerrors.ErrSQLExecution{Operation: "удаление данных чата", Cause: err}
+		return &customerrors.ErrSQLExecution{Operation: customerrors.OpClearChatStateData, Cause: err}
 	}
 
 	return nil
