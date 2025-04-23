@@ -16,7 +16,7 @@ type ScrapperClient struct {
 
 func NewScrapperClient(baseURL string) (*ScrapperClient, error) {
 	if baseURL == "" {
-		baseURL = "http://localhost:8081"
+		baseURL = "http://link_tracker_scrapper:8081"
 	}
 
 	client, err := v1_scrapper.NewClient(baseURL)

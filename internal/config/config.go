@@ -30,6 +30,20 @@ type Config struct {
 
 	UseParallelScheduler bool `mapstructure:"USE_PARALLEL_SCHEDULER"`
 	SchedulerWorkers     int  `mapstructure:"SCHEDULER_WORKERS"`
+
+	KafkaBrokers         string `mapstructure:"KAFKA_BROKERS"`
+	MessageTransport     string `mapstructure:"MESSAGE_TRANSPORT"`
+	TopicLinkUpdates     string `mapstructure:"TOPIC_LINK_UPDATES"`
+	TopicDeadLetterQueue string `mapstructure:"TOPIC_DEAD_LETTER_QUEUE"`
+
+	RedisURL      string        `mapstructure:"REDIS_URL"`
+	RedisPassword string        `mapstructure:"REDIS_PASSWORD"`
+	RedisDB       int           `mapstructure:"REDIS_DB"`
+	RedisCacheTTL time.Duration `mapstructure:"REDIS_CACHE_TTL"`
+
+	DigestEnabled      bool   `mapstructure:"DIGEST_ENABLED"`
+	DigestDeliveryTime string `mapstructure:"DIGEST_DELIVERY_TIME"`
+	NotificationMode   string `mapstructure:"NOTIFICATION_MODE"`
 }
 
 func LoadConfig() *Config {
@@ -46,7 +60,6 @@ func LoadConfig() *Config {
 	config := &Config{}
 
 	if err := viper.Unmarshal(config); err != nil {
-		// В случае ошибки используем значения по умолчанию
 		return getDefaultConfig()
 	}
 
@@ -56,8 +69,8 @@ func LoadConfig() *Config {
 func setDefaults() {
 	viper.SetDefault("BOT_SERVER_PORT", 8080)
 	viper.SetDefault("SCRAPPER_SERVER_PORT", 8081)
-	viper.SetDefault("SCRAPPER_BASE_URL", "http://localhost:8081")
-	viper.SetDefault("BOT_BASE_URL", "http://localhost:8080")
+	viper.SetDefault("SCRAPPER_BASE_URL", "http://link_tracker_scrapper:8081")
+	viper.SetDefault("BOT_BASE_URL", "http://link_tracker_bot:8080")
 	viper.SetDefault("SCHEDULER_CHECK_INTERVAL", "1m")
 
 	viper.SetDefault("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/link_tracker")
@@ -67,14 +80,28 @@ func setDefaults() {
 
 	viper.SetDefault("USE_PARALLEL_SCHEDULER", true)
 	viper.SetDefault("SCHEDULER_WORKERS", 4)
+
+	viper.SetDefault("KAFKA_BROKERS", "kafka:9092")
+	viper.SetDefault("MESSAGE_TRANSPORT", "HTTP")
+	viper.SetDefault("TOPIC_LINK_UPDATES", "link-updates")
+	viper.SetDefault("TOPIC_DEAD_LETTER_QUEUE", "link-updates-dlq")
+
+	viper.SetDefault("REDIS_URL", "redis:6379")
+	viper.SetDefault("REDIS_PASSWORD", "")
+	viper.SetDefault("REDIS_DB", 0)
+	viper.SetDefault("REDIS_CACHE_TTL", "30m")
+
+	viper.SetDefault("DIGEST_ENABLED", false)
+	viper.SetDefault("DIGEST_DELIVERY_TIME", "10:00")
+	viper.SetDefault("NOTIFICATION_MODE", "instant")
 }
 
 func getDefaultConfig() *Config {
 	return &Config{
 		BotServerPort:          8080,
 		ScrapperServerPort:     8081,
-		ScrapperBaseURL:        "http://localhost:8081",
-		BotBaseURL:             "http://localhost:8080",
+		ScrapperBaseURL:        "http://link_tracker_scrapper:8081",
+		BotBaseURL:             "http://link_tracker_bot:8080",
 		SchedulerCheckInterval: 1 * time.Minute,
 		DatabaseURL:            "postgres://postgres:postgres@localhost:5432/link_tracker",
 		DatabaseAccessType:     SQLAccess,
@@ -82,5 +109,19 @@ func getDefaultConfig() *Config {
 		DatabaseMaxConn:        10,
 		UseParallelScheduler:   true,
 		SchedulerWorkers:       4,
+
+		KafkaBrokers:         "kafka:9092",
+		MessageTransport:     "HTTP",
+		TopicLinkUpdates:     "link-updates",
+		TopicDeadLetterQueue: "link-updates-dlq",
+
+		RedisURL:      "redis:6379",
+		RedisPassword: "",
+		RedisDB:       0,
+		RedisCacheTTL: 30 * time.Minute,
+
+		DigestEnabled:      false,
+		DigestDeliveryTime: "10:00",
+		NotificationMode:   "instant",
 	}
 }

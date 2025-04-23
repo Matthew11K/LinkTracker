@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 
+	"github.com/central-university-dev/go-Matthew11K/internal/bot/cache"
 	"github.com/central-university-dev/go-Matthew11K/internal/bot/domain"
 	commonservice "github.com/central-university-dev/go-Matthew11K/internal/common"
 	domainerrors "github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
@@ -65,6 +67,10 @@ func NewBotService(
 	}
 }
 
+func (s *BotService) WithCache(linkCache cache.LinkCache) *CachedBotService {
+	return NewCachedBotService(s, linkCache, slog.Default())
+}
+
 func (s *BotService) ProcessCommand(ctx context.Context, command *models.Command) (string, error) {
 	//nolint:exhaustive // CommandUnknown обрабатывается в блоке default
 	switch command.Type {
@@ -108,6 +114,10 @@ func (s *BotService) ProcessMessage(ctx context.Context, chatID, _ int64, text, 
 
 func (s *BotService) SendLinkUpdate(ctx context.Context, update *models.LinkUpdate) error {
 	return s.telegramClient.SendUpdate(ctx, update)
+}
+
+func (s *BotService) HandleUpdate(ctx context.Context, update *models.LinkUpdate) error {
+	return s.SendLinkUpdate(ctx, update)
 }
 
 func (s *BotService) handleStartCommand(ctx context.Context, command *models.Command) (string, error) {

@@ -10,30 +10,43 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/central-university-dev/go-Matthew11K/internal/common"
-	"github.com/central-university-dev/go-Matthew11K/internal/database"
-	clients2 "github.com/central-university-dev/go-Matthew11K/internal/scrapper/clients"
-	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/repository"
-	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/scheduler"
-	"github.com/central-university-dev/go-Matthew11K/pkg/txs"
-
 	"log/slog"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1/v1_scrapper"
+	"github.com/central-university-dev/go-Matthew11K/internal/common"
 	"github.com/central-university-dev/go-Matthew11K/internal/config"
+	"github.com/central-university-dev/go-Matthew11K/internal/database"
+	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/clients"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/handler"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/notify"
+	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/repository"
+	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/scheduler"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/service"
 	"github.com/central-university-dev/go-Matthew11K/pkg"
+	"github.com/central-university-dev/go-Matthew11K/pkg/txs"
 )
 
-func gracefulShutdown(server *http.Server, scheduler interface {
+// Scheduler интерфейс планировщика.
+type Scheduler interface {
+	Start()
 	Stop()
-}, stopCh <-chan struct{}, appLogger *slog.Logger) {
+}
+
+func gracefulShutdown(
+	server *http.Server,
+	updateScheduler Scheduler,
+	digestService *service.DigestService,
+	stopCh <-chan struct{},
+	appLogger *slog.Logger,
+) {
 	<-stopCh
 	appLogger.Info("Получен сигнал завершения")
 
-	scheduler.Stop()
+	updateScheduler.Stop()
+
+	if digestService != nil {
+		digestService.Stop()
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -80,7 +93,7 @@ func main() {
 	}
 }
 
-//nolint:funlen // Длина функции обусловлена необходимостью последовательной инициализации всех компонентов.
+//nolint:funlen,gocyclo // Длина функции обусловлена необходимостью последовательной инициализации всех компонентов.
 func run() error {
 	appLogger := pkg.NewLogger(os.Stdout)
 
@@ -90,8 +103,13 @@ func run() error {
 
 	db, err := database.NewPostgresDB(ctx, cfg, appLogger)
 	if err != nil {
+		appLogger.Error("Ошибка при подключении к базе данных",
+			"error", err,
+		)
+
 		return fmt.Errorf("ошибка подключения к базе данных: %w", err)
 	}
+
 	defer db.Close()
 
 	txManager := txs.NewTxManager(db.Pool, appLogger)
@@ -126,8 +144,8 @@ func run() error {
 	}
 
 	updaterFactory := common.NewLinkUpdaterFactory(
-		clients2.NewGitHubClient(cfg.GitHubAPIToken, ""),
-		clients2.NewStackOverflowClient(cfg.StackOverflowAPIToken, ""),
+		clients.NewGitHubClient(cfg.GitHubAPIToken, ""),
+		clients.NewStackOverflowClient(cfg.StackOverflowAPIToken, ""),
 	)
 
 	linkAnalyzer := common.NewLinkAnalyzer()
@@ -202,7 +220,7 @@ func run() error {
 
 	startHTTPServer(httpServer, cfg.ScrapperServerPort, stopCh, appLogger)
 
-	gracefulShutdown(httpServer, sch, stopCh, appLogger)
+	gracefulShutdown(httpServer, sch, nil, stopCh, appLogger)
 
 	return nil
 }

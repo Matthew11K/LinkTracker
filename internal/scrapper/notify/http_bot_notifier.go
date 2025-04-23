@@ -17,7 +17,7 @@ type HTTPBotNotifier struct {
 
 func NewHTTPBotNotifier(baseURL string, logger *slog.Logger) (*HTTPBotNotifier, error) {
 	if baseURL == "" {
-		baseURL = "http://localhost:8080"
+		baseURL = "http://link_tracker_bot:8080"
 	}
 
 	client, err := v1_bot.NewClient(baseURL)

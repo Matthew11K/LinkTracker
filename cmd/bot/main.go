@@ -7,13 +7,16 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"log/slog"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1/v1_bot"
+	"github.com/central-university-dev/go-Matthew11K/internal/bot/cache"
 	"github.com/central-university-dev/go-Matthew11K/internal/bot/clients"
+	"github.com/central-university-dev/go-Matthew11K/internal/bot/clients/kafka"
 	"github.com/central-university-dev/go-Matthew11K/internal/bot/domain"
 	bothandler "github.com/central-university-dev/go-Matthew11K/internal/bot/handler"
 	"github.com/central-university-dev/go-Matthew11K/internal/bot/repository"
@@ -26,7 +29,7 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/pkg/txs"
 )
 
-func gracefulShutdown(server *http.Server, poller *telegram.Poller, stopCh <-chan struct{}, appLogger *slog.Logger) {
+func gracefulShutdown(server *http.Server, poller *telegram.Poller, kafkaConsumer *kafka.Consumer, redisCache *cache.RedisLinkCache, stopCh <-chan struct{}, appLogger *slog.Logger) {
 	<-stopCh
 	appLogger.Info("Получен сигнал завершения")
 
@@ -39,6 +42,22 @@ func gracefulShutdown(server *http.Server, poller *telegram.Poller, stopCh <-cha
 		appLogger.Error("Ошибка при остановке HTTP сервера",
 			"error", err,
 		)
+	}
+
+	if kafkaConsumer != nil {
+		if err := kafkaConsumer.Close(); err != nil {
+			appLogger.Error("Ошибка при закрытии Kafka консьюмера",
+				"error", err,
+			)
+		}
+	}
+
+	if redisCache != nil {
+		if err := redisCache.Close(); err != nil {
+			appLogger.Error("Ошибка при закрытии соединения с Redis",
+				"error", err,
+			)
+		}
 	}
 
 	appLogger.Info("Сервер успешно остановлен")
@@ -142,7 +161,7 @@ func run() error {
 
 	linkAnalyzer := commonservice.NewLinkAnalyzer()
 
-	botService := botservice.NewBotService(
+	baseBotService := botservice.NewBotService(
 		chatStateRepo,
 		scrapperClient,
 		telegramClient,
@@ -150,9 +169,56 @@ func run() error {
 		txManager,
 	)
 
-	botHandler := bothandler.NewBotHandler(botService)
+	var botHandler bothandler.BotHandler
 
-	server, err := v1_bot.NewServer(botHandler)
+	var messageHandler kafka.MessageHandler
+
+	var botService telegram.BotService
+
+	botService = baseBotService
+	messageHandler = baseBotService
+
+	var redisCache *cache.RedisLinkCache
+
+	if cfg.RedisURL != "" {
+		cacheTTL := cfg.RedisCacheTTL
+		if cacheTTL <= 0 {
+			cacheTTL = 30 * time.Minute
+		}
+
+		redisCache, err = cache.NewRedisLinkCache(cfg.RedisURL, cfg.RedisPassword, cfg.RedisDB, cacheTTL, appLogger)
+		if err != nil {
+			appLogger.Error("Ошибка при подключении к Redis",
+				"error", err,
+			)
+		} else {
+			appLogger.Info("Кэш Redis успешно инициализирован")
+			cachedService := baseBotService.WithCache(redisCache)
+			botService = cachedService
+			messageHandler = cachedService
+		}
+	}
+
+	var kafkaConsumer *kafka.Consumer
+
+	if strings.EqualFold(cfg.MessageTransport, "KAFKA") {
+		brokers := strings.Split(cfg.KafkaBrokers, ",")
+		kafkaConsumer = kafka.NewConsumer(
+			brokers,
+			"bot-group",
+			cfg.TopicLinkUpdates,
+			cfg.TopicDeadLetterQueue,
+			messageHandler,
+			appLogger,
+		)
+
+		kafkaConsumer.Start(ctx)
+		appLogger.Info("Kafka консьюмер успешно запущен")
+	}
+
+	botHandler = *bothandler.NewBotHandler(botService)
+
+	server, err := v1_bot.NewServer(&botHandler)
 	if err != nil {
 		appLogger.Error("Ошибка при создании сервера",
 			"error", err,
@@ -173,7 +239,7 @@ func run() error {
 	stopCh := make(chan struct{})
 
 	startHTTPServer(httpServer, cfg.BotServerPort, stopCh, appLogger)
-	gracefulShutdown(httpServer, poller, stopCh, appLogger)
+	gracefulShutdown(httpServer, poller, kafkaConsumer, redisCache, stopCh, appLogger)
 
 	return nil
 }
