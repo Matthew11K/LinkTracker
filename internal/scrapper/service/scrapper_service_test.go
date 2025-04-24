@@ -229,6 +229,7 @@ func TestScrapperService_ProcessLink_Preview(t *testing.T) {
 
 		mockGithubClient.On("GetRepositoryLastUpdate", ctx, "owner", "repo").Return(updateTime, nil).Once()
 		mockLinkRepo.On("Update", ctx, mock.Anything).Return(nil).Once()
+		mockLinkRepo.On("FindByID", ctx, linkID).Return(githubLink, nil).Once()
 		mockChatRepo.On("FindByLinkID", ctx, linkID).Return([]*models.Chat{{ID: chatIDs[0]}, {ID: chatIDs[1]}, {ID: chatIDs[2]}}, nil).Once()
 		mockGithubClient.On("GetRepositoryDetails", ctx, "owner", "repo").Return(contentDetails, nil).Once()
 		mockDetailsRepo.On("Save", ctx, mock.MatchedBy(func(details *models.ContentDetails) bool {
@@ -298,6 +299,7 @@ func TestScrapperService_ProcessLink_Preview(t *testing.T) {
 
 		mockStackOverflowClient.On("GetQuestionLastUpdate", ctx, int64(12345)).Return(updateTime, nil).Once()
 		mockLinkRepo.On("Update", ctx, mock.Anything).Return(nil).Once()
+		mockLinkRepo.On("FindByID", ctx, linkID).Return(soLink, nil).Once()
 		mockChatRepo.On("FindByLinkID", ctx, linkID).Return([]*models.Chat{{ID: chatIDs[0]}, {ID: chatIDs[1]}, {ID: chatIDs[2]}}, nil).Once()
 		mockStackOverflowClient.On("GetQuestionDetails", ctx, int64(12345)).Return(contentDetails, nil).Once()
 		mockDetailsRepo.On("Save", ctx, mock.MatchedBy(func(details *models.ContentDetails) bool {
@@ -432,7 +434,7 @@ func TestScrapperService_ProcessLink_Scenarios(t *testing.T) {
 			})
 
 		mockLinkRepo.On("Update", ctx, mock.AnythingOfType("*models.Link")).Return(nil).Once()
-
+		mockLinkRepo.On("FindByID", ctx, int64(2)).Return(soLink, nil).Once()
 		mockChatRepo.On("FindByLinkID", ctx, soLink.ID).Return([]*models.Chat{}, nil).Once()
 
 		svc := service.NewScrapperService(

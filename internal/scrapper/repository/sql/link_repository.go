@@ -344,6 +344,18 @@ func (r *LinkRepository) Update(ctx context.Context, link *models.Link) error {
 		return &customerrors.ErrLinkNotFound{URL: link.URL}
 	}
 
+	if len(link.Tags) > 0 {
+		if err := r.SaveTags(ctx, link.ID, link.Tags); err != nil {
+			return err
+		}
+	}
+
+	if len(link.Filters) > 0 {
+		if err := r.SaveFilters(ctx, link.ID, link.Filters); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

@@ -217,6 +217,10 @@ func (s *BotService) handleListCommand(ctx context.Context, command *models.Comm
 		if len(link.Tags) > 0 {
 			sb.WriteString(fmt.Sprintf("   Теги: %s\n", strings.Join(link.Tags, ", ")))
 		}
+
+		if len(link.Filters) > 0 {
+			sb.WriteString(fmt.Sprintf("   Фильтры: %s\n", strings.Join(link.Filters, ", ")))
+		}
 	}
 
 	return sb.String(), nil

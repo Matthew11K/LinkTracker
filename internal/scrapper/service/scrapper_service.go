@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/common"
@@ -361,6 +362,17 @@ func (s *ScrapperService) notifyChatsAboutUpdate(ctx context.Context, link *mode
 		if err != nil {
 			return true, err
 		}
+
+		// Проверяем фильтры только если у нас есть информация об обновлении
+		if s.shouldFilter(updateInfo, link.Filters) {
+			s.logger.Info("Обновление отфильтровано согласно настройкам",
+				"linkId", link.ID,
+				"url", link.URL,
+				"filters", link.Filters,
+				"author", updateInfo.Author,
+			)
+			return true, nil
+		}
 	}
 
 	var description string
@@ -519,6 +531,17 @@ func (s *ScrapperService) ProcessLink(ctx context.Context, link *models.Link) (b
 		"updatedAt", link.LastUpdated,
 	)
 
+	freshLink, err := s.linkRepo.FindByID(ctx, link.ID)
+	if err != nil {
+		s.logger.Error("Ошибка при получении свежих данных о ссылке",
+			"error", err,
+			"linkID", link.ID,
+		)
+		return true, err
+	}
+
+	link = freshLink
+
 	chats, err := s.chatRepo.FindByLinkID(ctx, link.ID)
 	if err != nil {
 		s.logger.Error("Ошибка при получении списка чатов для ссылки",
@@ -540,4 +563,35 @@ func (s *ScrapperService) ProcessLink(ctx context.Context, link *models.Link) (b
 	}
 
 	return s.notifyChatsAboutUpdate(ctx, link, chatIDs)
+}
+
+func (s *ScrapperService) shouldFilter(updateInfo *models.UpdateInfo, filters []string) bool {
+	if updateInfo == nil || len(filters) == 0 {
+		return false
+	}
+
+	for _, filter := range filters {
+		parts := strings.SplitN(filter, "=", 2)
+		if len(parts) != 2 {
+			s.logger.Warn("Некорректный формат фильтра", "filter", filter)
+			continue
+		}
+
+		key, value := parts[0], parts[1]
+
+		switch key {
+		case "user":
+			if strings.EqualFold(updateInfo.Author, value) {
+				s.logger.Info("Применен фильтр по пользователю",
+					"filter", filter,
+					"author", updateInfo.Author,
+				)
+				return true
+			}
+		default:
+			s.logger.Warn("Неизвестный тип фильтра", "filterType", key)
+		}
+	}
+
+	return false
 }
