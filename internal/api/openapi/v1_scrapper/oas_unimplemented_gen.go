@@ -13,15 +13,6 @@ type UnimplementedHandler struct{}
 
 var _ Handler = UnimplementedHandler{}
 
-// DigestGet implements GET /digest operation.
-//
-// Получить дайджест обновлений ссылок.
-//
-// GET /digest
-func (UnimplementedHandler) DigestGet(ctx context.Context, params DigestGetParams) (r DigestGetRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // LinksDelete implements DELETE /links operation.
 //
 // Убрать отслеживание ссылки.
@@ -49,6 +40,15 @@ func (UnimplementedHandler) LinksPost(ctx context.Context, req *AddLinkRequest, 
 	return r, ht.ErrNotImplemented
 }
 
+// NotificationSettingsPost implements POST /notification-settings operation.
+//
+// Обновить настройки уведомлений.
+//
+// POST /notification-settings
+func (UnimplementedHandler) NotificationSettingsPost(ctx context.Context, req *UpdateNotificationSettingsRequest, params NotificationSettingsPostParams) (r NotificationSettingsPostRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // TgChatIDDelete implements DELETE /tg-chat/{id} operation.
 //
 // Удалить чат.
@@ -63,15 +63,6 @@ func (UnimplementedHandler) TgChatIDDelete(ctx context.Context, params TgChatIDD
 // Зарегистрировать чат.
 //
 // POST /tg-chat/{id}
-func (UnimplementedHandler) TgChatIDPost(ctx context.Context, req OptChatSettings, params TgChatIDPostParams) (r TgChatIDPostRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// TgChatIDPut implements PUT /tg-chat/{id} operation.
-//
-// Обновить настройки чата.
-//
-// PUT /tg-chat/{id}
-func (UnimplementedHandler) TgChatIDPut(ctx context.Context, req *ChatSettings, params TgChatIDPutParams) (r TgChatIDPutRes, _ error) {
+func (UnimplementedHandler) TgChatIDPost(ctx context.Context, params TgChatIDPostParams) (r TgChatIDPostRes, _ error) {
 	return r, ht.ErrNotImplemented
 }

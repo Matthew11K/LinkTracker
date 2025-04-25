@@ -12,10 +12,11 @@ import (
 
 	"log/slog"
 
-	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1/v1_scrapper"
+	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1_scrapper"
 	"github.com/central-university-dev/go-Matthew11K/internal/common"
 	"github.com/central-university-dev/go-Matthew11K/internal/config"
 	"github.com/central-university-dev/go-Matthew11K/internal/database"
+	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/cache"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/clients"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/handler"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/notify"
@@ -93,7 +94,7 @@ func main() {
 	}
 }
 
-//nolint:funlen,gocyclo // Длина функции обусловлена необходимостью последовательной инициализации всех компонентов.
+//nolint:funlen // Длина функции обусловлена необходимостью последовательной инициализации всех компонентов.
 func run() error {
 	appLogger := pkg.NewLogger(os.Stdout)
 
@@ -159,10 +160,34 @@ func run() error {
 		return err
 	}
 
+	var digestCache service.DigestCache
+
+	var digestService *service.DigestService
+
+	if cfg.DigestEnabled {
+		redisTTL := cfg.RedisCacheTTL
+
+		digestCache, err = cache.NewRedisDigestCache(cfg.RedisURL, cfg.RedisPassword, cfg.RedisDB, redisTTL, appLogger)
+		if err != nil {
+			appLogger.Error("Ошибка при подключении к Redis для дайджестов",
+				"error", err,
+			)
+
+			appLogger.Warn("Продолжаем без дайджестов")
+		} else {
+			digestService = service.NewDigestService(cfg, botNotifier, digestCache, chatRepo, appLogger)
+			digestService.Start(ctx)
+			appLogger.Info("Сервис дайджестов успешно запущен")
+		}
+	} else {
+		appLogger.Info("Дайджесты отключены в конфигурации")
+	}
+
 	scrapperService := service.NewScrapperService(
 		linkRepo,
 		chatRepo,
 		botNotifier,
+		digestService,
 		detailsRepo,
 		updaterFactory,
 		linkAnalyzer,
@@ -220,7 +245,7 @@ func run() error {
 
 	startHTTPServer(httpServer, cfg.ScrapperServerPort, stopCh, appLogger)
 
-	gracefulShutdown(httpServer, sch, nil, stopCh, appLogger)
+	gracefulShutdown(httpServer, sch, digestService, stopCh, appLogger)
 
 	return nil
 }

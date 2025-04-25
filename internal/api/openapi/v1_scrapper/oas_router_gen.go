@@ -61,27 +61,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 			switch elem[0] {
-			case 'd': // Prefix: "digest"
-				origElem := elem
-				if l := len("digest"); len(elem) >= l && elem[0:l] == "digest" {
-					elem = elem[l:]
-				} else {
-					break
-				}
-
-				if len(elem) == 0 {
-					// Leaf node.
-					switch r.Method {
-					case "GET":
-						s.handleDigestGetRequest([0]string{}, elemIsEscaped, w, r)
-					default:
-						s.notAllowed(w, r, "GET")
-					}
-
-					return
-				}
-
-				elem = origElem
 			case 'l': // Prefix: "links"
 				origElem := elem
 				if l := len("links"); len(elem) >= l && elem[0:l] == "links" {
@@ -101,6 +80,27 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						s.handleLinksPostRequest([0]string{}, elemIsEscaped, w, r)
 					default:
 						s.notAllowed(w, r, "DELETE,GET,POST")
+					}
+
+					return
+				}
+
+				elem = origElem
+			case 'n': // Prefix: "notification-settings"
+				origElem := elem
+				if l := len("notification-settings"); len(elem) >= l && elem[0:l] == "notification-settings" {
+					elem = elem[l:]
+				} else {
+					break
+				}
+
+				if len(elem) == 0 {
+					// Leaf node.
+					switch r.Method {
+					case "POST":
+						s.handleNotificationSettingsPostRequest([0]string{}, elemIsEscaped, w, r)
+					default:
+						s.notAllowed(w, r, "POST")
 					}
 
 					return
@@ -131,12 +131,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						s.handleTgChatIDPostRequest([1]string{
 							args[0],
 						}, elemIsEscaped, w, r)
-					case "PUT":
-						s.handleTgChatIDPutRequest([1]string{
-							args[0],
-						}, elemIsEscaped, w, r)
 					default:
-						s.notAllowed(w, r, "DELETE,POST,PUT")
+						s.notAllowed(w, r, "DELETE,POST")
 					}
 
 					return
@@ -238,31 +234,6 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 				break
 			}
 			switch elem[0] {
-			case 'd': // Prefix: "digest"
-				origElem := elem
-				if l := len("digest"); len(elem) >= l && elem[0:l] == "digest" {
-					elem = elem[l:]
-				} else {
-					break
-				}
-
-				if len(elem) == 0 {
-					// Leaf node.
-					switch method {
-					case "GET":
-						r.name = DigestGetOperation
-						r.summary = "Получить дайджест обновлений ссылок"
-						r.operationID = ""
-						r.pathPattern = "/digest"
-						r.args = args
-						r.count = 0
-						return r, true
-					default:
-						return
-					}
-				}
-
-				elem = origElem
 			case 'l': // Prefix: "links"
 				origElem := elem
 				if l := len("links"); len(elem) >= l && elem[0:l] == "links" {
@@ -304,6 +275,31 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 				}
 
 				elem = origElem
+			case 'n': // Prefix: "notification-settings"
+				origElem := elem
+				if l := len("notification-settings"); len(elem) >= l && elem[0:l] == "notification-settings" {
+					elem = elem[l:]
+				} else {
+					break
+				}
+
+				if len(elem) == 0 {
+					// Leaf node.
+					switch method {
+					case "POST":
+						r.name = NotificationSettingsPostOperation
+						r.summary = "Обновить настройки уведомлений"
+						r.operationID = ""
+						r.pathPattern = "/notification-settings"
+						r.args = args
+						r.count = 0
+						return r, true
+					default:
+						return
+					}
+				}
+
+				elem = origElem
 			case 't': // Prefix: "tg-chat/"
 				origElem := elem
 				if l := len("tg-chat/"); len(elem) >= l && elem[0:l] == "tg-chat/" {
@@ -331,14 +327,6 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 					case "POST":
 						r.name = TgChatIDPostOperation
 						r.summary = "Зарегистрировать чат"
-						r.operationID = ""
-						r.pathPattern = "/tg-chat/{id}"
-						r.args = args
-						r.count = 1
-						return r, true
-					case "PUT":
-						r.name = TgChatIDPutOperation
-						r.summary = "Обновить настройки чата"
 						r.operationID = ""
 						r.pathPattern = "/tg-chat/{id}"
 						r.args = args

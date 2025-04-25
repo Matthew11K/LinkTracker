@@ -220,3 +220,38 @@ const (
 	OpSetChatStateData   = "set_chat_state_data"
 	OpClearChatStateData = "clear_chat_state_data"
 )
+
+type ErrBadRequest struct {
+	Message string
+}
+
+func (e *ErrBadRequest) Error() string {
+	return fmt.Sprintf("bad request: %s", e.Message)
+}
+
+type ErrUnknownNotificationMode struct {
+	Mode string
+}
+
+func (e *ErrUnknownNotificationMode) Error() string {
+	return fmt.Sprintf("неизвестный режим уведомлений: %s", e.Mode)
+}
+
+func (e *ErrUnknownNotificationMode) Is(target error) bool {
+	_, ok := target.(*ErrUnknownNotificationMode)
+	return ok
+}
+
+type ErrInvalidValue struct {
+	FieldName string
+	Value     string
+}
+
+func (e *ErrInvalidValue) Error() string {
+	return fmt.Sprintf("некорректное значение '%s' для поля '%s'", e.Value, e.FieldName)
+}
+
+func (e *ErrInvalidValue) Is(target error) bool {
+	_, ok := target.(*ErrInvalidValue)
+	return ok
+}

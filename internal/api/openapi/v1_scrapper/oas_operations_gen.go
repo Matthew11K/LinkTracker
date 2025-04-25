@@ -6,11 +6,10 @@ package v1_scrapper
 type OperationName = string
 
 const (
-	DigestGetOperation      OperationName = "DigestGet"
-	LinksDeleteOperation    OperationName = "LinksDelete"
-	LinksGetOperation       OperationName = "LinksGet"
-	LinksPostOperation      OperationName = "LinksPost"
-	TgChatIDDeleteOperation OperationName = "TgChatIDDelete"
-	TgChatIDPostOperation   OperationName = "TgChatIDPost"
-	TgChatIDPutOperation    OperationName = "TgChatIDPut"
+	LinksDeleteOperation              OperationName = "LinksDelete"
+	LinksGetOperation                 OperationName = "LinksGet"
+	LinksPostOperation                OperationName = "LinksPost"
+	NotificationSettingsPostOperation OperationName = "NotificationSettingsPost"
+	TgChatIDDeleteOperation           OperationName = "TgChatIDDelete"
+	TgChatIDPostOperation             OperationName = "TgChatIDPost"
 )

@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"net/url"
 
-	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1/v1_bot"
+	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1_bot"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 )
 

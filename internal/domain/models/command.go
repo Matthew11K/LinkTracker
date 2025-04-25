@@ -8,6 +8,8 @@ const (
 	CommandTrack   CommandType = "/track"
 	CommandUntrack CommandType = "/untrack"
 	CommandList    CommandType = "/list"
+	CommandMode    CommandType = "/mode"
+	CommandTime    CommandType = "/time"
 	CommandUnknown CommandType = "unknown"
 )
 

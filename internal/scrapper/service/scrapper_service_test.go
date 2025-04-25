@@ -34,6 +34,7 @@ func TestScrapperService_AddLink(t *testing.T) {
 	mockLinkRepo := new(repomocks.LinkRepository)
 	mockChatRepo := new(repomocks.ChatRepository)
 	mockBotNotifier := new(servicemocks.BotNotifier)
+	mockDigestService := new(servicemocks.DigestUpdater)
 	mockDetailsRepo := new(repomocks.ContentDetailsRepository)
 	mockTxManager := new(txsmocks.TxManager)
 
@@ -86,6 +87,7 @@ func TestScrapperService_AddLink(t *testing.T) {
 		mockLinkRepo,
 		mockChatRepo,
 		mockBotNotifier,
+		mockDigestService,
 		mockDetailsRepo,
 		updaterFactory,
 		linkAnalyzer,
@@ -113,6 +115,7 @@ func TestScrapperService_AddDuplicateLink(t *testing.T) {
 	mockLinkRepo := new(repomocks.LinkRepository)
 	mockChatRepo := new(repomocks.ChatRepository)
 	mockBotNotifier := new(servicemocks.BotNotifier)
+	mockDigestService := new(servicemocks.DigestUpdater)
 	mockDetailsRepo := new(repomocks.ContentDetailsRepository)
 	mockTxManager := new(txsmocks.TxManager)
 
@@ -161,6 +164,7 @@ func TestScrapperService_AddDuplicateLink(t *testing.T) {
 		mockLinkRepo,
 		mockChatRepo,
 		mockBotNotifier,
+		mockDigestService,
 		mockDetailsRepo,
 		updaterFactory,
 		linkAnalyzer,
@@ -203,6 +207,7 @@ func TestScrapperService_ProcessLink_Preview(t *testing.T) {
 		mockLinkRepo := new(repomocks.LinkRepository)
 		mockChatRepo := new(repomocks.ChatRepository)
 		mockBotNotifier := new(servicemocks.BotNotifier)
+		mockDigestService := new(servicemocks.DigestUpdater)
 		mockDetailsRepo := new(repomocks.ContentDetailsRepository)
 		mockGithubClient := new(commonmocks.GitHubClient)
 		mockStackOverflowClient := new(commonmocks.StackOverflowClient)
@@ -231,6 +236,11 @@ func TestScrapperService_ProcessLink_Preview(t *testing.T) {
 		mockLinkRepo.On("Update", ctx, mock.Anything).Return(nil).Once()
 		mockLinkRepo.On("FindByID", ctx, linkID).Return(githubLink, nil).Once()
 		mockChatRepo.On("FindByLinkID", ctx, linkID).Return([]*models.Chat{{ID: chatIDs[0]}, {ID: chatIDs[1]}, {ID: chatIDs[2]}}, nil).Once()
+
+		for _, chatID := range chatIDs {
+			mockChatRepo.On("FindByID", ctx, chatID).Return(&models.Chat{ID: chatID, NotificationMode: models.NotificationModeInstant}, nil).Once()
+		}
+
 		mockGithubClient.On("GetRepositoryDetails", ctx, "owner", "repo").Return(contentDetails, nil).Once()
 		mockDetailsRepo.On("Save", ctx, mock.MatchedBy(func(details *models.ContentDetails) bool {
 			return details.LinkID == linkID && details.ContentText == longText
@@ -238,6 +248,8 @@ func TestScrapperService_ProcessLink_Preview(t *testing.T) {
 		mockBotNotifier.On("SendUpdate", ctx, mock.MatchedBy(func(update *models.LinkUpdate) bool {
 			return update.UpdateInfo != nil && update.UpdateInfo.TextPreview == expectedPreviewLong
 		})).Return(nil).Once()
+
+		mockDigestService.On("AddUpdate", mock.Anything, mock.AnythingOfType("*models.LinkUpdate")).Return(nil).Maybe()
 
 		mockTxManager.On("WithTransaction", ctx, mock.AnythingOfType("func(context.Context) error")).Return(nil).
 			Run(func(args mock.Arguments) {
@@ -250,6 +262,7 @@ func TestScrapperService_ProcessLink_Preview(t *testing.T) {
 			mockLinkRepo,
 			mockChatRepo,
 			mockBotNotifier,
+			mockDigestService,
 			mockDetailsRepo,
 			updaterFactory,
 			linkAnalyzer,
@@ -273,6 +286,7 @@ func TestScrapperService_ProcessLink_Preview(t *testing.T) {
 		mockLinkRepo := new(repomocks.LinkRepository)
 		mockChatRepo := new(repomocks.ChatRepository)
 		mockBotNotifier := new(servicemocks.BotNotifier)
+		mockDigestService := new(servicemocks.DigestUpdater)
 		mockDetailsRepo := new(repomocks.ContentDetailsRepository)
 		mockGithubClient := new(commonmocks.GitHubClient)
 		mockStackOverflowClient := new(commonmocks.StackOverflowClient)
@@ -301,6 +315,11 @@ func TestScrapperService_ProcessLink_Preview(t *testing.T) {
 		mockLinkRepo.On("Update", ctx, mock.Anything).Return(nil).Once()
 		mockLinkRepo.On("FindByID", ctx, linkID).Return(soLink, nil).Once()
 		mockChatRepo.On("FindByLinkID", ctx, linkID).Return([]*models.Chat{{ID: chatIDs[0]}, {ID: chatIDs[1]}, {ID: chatIDs[2]}}, nil).Once()
+
+		for _, chatID := range chatIDs {
+			mockChatRepo.On("FindByID", ctx, chatID).Return(&models.Chat{ID: chatID, NotificationMode: models.NotificationModeInstant}, nil).Once()
+		}
+
 		mockStackOverflowClient.On("GetQuestionDetails", ctx, int64(12345)).Return(contentDetails, nil).Once()
 		mockDetailsRepo.On("Save", ctx, mock.MatchedBy(func(details *models.ContentDetails) bool {
 			return details.LinkID == linkID && details.ContentText == shortText
@@ -308,6 +327,8 @@ func TestScrapperService_ProcessLink_Preview(t *testing.T) {
 		mockBotNotifier.On("SendUpdate", ctx, mock.MatchedBy(func(update *models.LinkUpdate) bool {
 			return update.UpdateInfo != nil && update.UpdateInfo.TextPreview == shortText
 		})).Return(nil).Once()
+
+		mockDigestService.On("AddUpdate", mock.Anything, mock.AnythingOfType("*models.LinkUpdate")).Return(nil).Maybe()
 
 		mockTxManager.On("WithTransaction", ctx, mock.AnythingOfType("func(context.Context) error")).Return(nil).
 			Run(func(args mock.Arguments) {
@@ -320,6 +341,7 @@ func TestScrapperService_ProcessLink_Preview(t *testing.T) {
 			mockLinkRepo,
 			mockChatRepo,
 			mockBotNotifier,
+			mockDigestService,
 			mockDetailsRepo,
 			updaterFactory,
 			linkAnalyzer,
@@ -350,6 +372,7 @@ func TestScrapperService_ProcessLink_Scenarios(t *testing.T) {
 		mockLinkRepo := new(repomocks.LinkRepository)
 		mockChatRepo := new(repomocks.ChatRepository)
 		mockBotNotifier := new(servicemocks.BotNotifier)
+		mockDigestService := new(servicemocks.DigestUpdater)
 		mockDetailsRepo := new(repomocks.ContentDetailsRepository)
 		mockGithubClient := new(commonmocks.GitHubClient)
 		mockStackOverflowClient := new(commonmocks.StackOverflowClient)
@@ -384,6 +407,7 @@ func TestScrapperService_ProcessLink_Scenarios(t *testing.T) {
 			mockLinkRepo,
 			mockChatRepo,
 			mockBotNotifier,
+			mockDigestService,
 			mockDetailsRepo,
 			updaterFactory,
 			linkAnalyzer,
@@ -404,6 +428,7 @@ func TestScrapperService_ProcessLink_Scenarios(t *testing.T) {
 		mockLinkRepo := new(repomocks.LinkRepository)
 		mockChatRepo := new(repomocks.ChatRepository)
 		mockBotNotifier := new(servicemocks.BotNotifier)
+		mockDigestService := new(servicemocks.DigestUpdater)
 		mockDetailsRepo := new(repomocks.ContentDetailsRepository)
 		mockGithubClient := new(commonmocks.GitHubClient)
 		mockStackOverflowClient := new(commonmocks.StackOverflowClient)
@@ -437,10 +462,13 @@ func TestScrapperService_ProcessLink_Scenarios(t *testing.T) {
 		mockLinkRepo.On("FindByID", ctx, int64(2)).Return(soLink, nil).Once()
 		mockChatRepo.On("FindByLinkID", ctx, soLink.ID).Return([]*models.Chat{}, nil).Once()
 
+		mockDigestService.On("AddUpdate", mock.Anything, mock.AnythingOfType("*models.LinkUpdate")).Return(nil).Maybe()
+
 		svc := service.NewScrapperService(
 			mockLinkRepo,
 			mockChatRepo,
 			mockBotNotifier,
+			mockDigestService,
 			mockDetailsRepo,
 			updaterFactory,
 			linkAnalyzer,
@@ -462,6 +490,7 @@ func TestScrapperService_ProcessLink_Scenarios(t *testing.T) {
 		mockLinkRepo := new(repomocks.LinkRepository)
 		mockChatRepo := new(repomocks.ChatRepository)
 		mockBotNotifier := new(servicemocks.BotNotifier)
+		mockDigestService := new(servicemocks.DigestUpdater)
 		mockDetailsRepo := new(repomocks.ContentDetailsRepository)
 		mockGithubClient := new(commonmocks.GitHubClient)
 		mockStackOverflowClient := new(commonmocks.StackOverflowClient)
@@ -487,6 +516,7 @@ func TestScrapperService_ProcessLink_Scenarios(t *testing.T) {
 			mockLinkRepo,
 			mockChatRepo,
 			mockBotNotifier,
+			mockDigestService,
 			mockDetailsRepo,
 			updaterFactory,
 			linkAnalyzer,

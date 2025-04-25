@@ -4,11 +4,21 @@ import (
 	"time"
 )
 
+type NotificationMode string
+
+const (
+	NotificationModeInstant NotificationMode = "instant"
+
+	NotificationModeDigest NotificationMode = "digest"
+)
+
 type Chat struct {
-	ID        int64
-	Links     []int64
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID               int64
+	Links            []int64
+	NotificationMode NotificationMode
+	DigestTime       time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 type ChatState int
@@ -19,4 +29,6 @@ const (
 	StateAwaitingTags
 	StateAwaitingFilters
 	StateAwaitingUntrackLink
+	StateAwaitingNotificationMode
+	StateAwaitingDigestTime
 )

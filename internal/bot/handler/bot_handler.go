@@ -3,7 +3,7 @@ package handler
 import (
 	"context"
 
-	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1/v1_bot"
+	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1_bot"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 )
@@ -27,12 +27,12 @@ func (h *BotHandler) UpdatesPost(ctx context.Context, req *v1_bot.LinkUpdate) (v
 		TgChatIDs: req.TgChatIds,
 	}
 
-	if !req.URL.IsSet() {
+	if !req.URL.IsSet() && !req.Description.IsSet() {
 		errResp := &v1_bot.ApiErrorResponse{
-			Description: v1_bot.NewOptString("Отсутствует обязательное поле URL"),
+			Description: v1_bot.NewOptString("Отсутствует обязательное поле URL или Description"),
 		}
 
-		return errResp, &errors.ErrMissingRequiredField{FieldName: "URL"}
+		return errResp, &errors.ErrMissingRequiredField{FieldName: "URL or Description"}
 	}
 
 	if !req.Description.IsSet() {
@@ -47,7 +47,10 @@ func (h *BotHandler) UpdatesPost(ctx context.Context, req *v1_bot.LinkUpdate) (v
 		update.ID = req.ID.Value
 	}
 
-	update.URL = req.URL.Value.String()
+	if req.URL.IsSet() {
+		update.URL = req.URL.Value.String()
+	}
+
 	update.Description = req.Description.Value
 
 	if err := h.linkUpdater.SendLinkUpdate(ctx, update); err != nil {

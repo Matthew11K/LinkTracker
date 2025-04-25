@@ -26,7 +26,11 @@ func TestRedisCache(t *testing.T) {
 	}))
 
 	redisC, redisPort := startRedisContainer(t)
-	defer redisC.Terminate(context.Background())
+	defer func() {
+		if err := redisC.Terminate(context.Background()); err != nil {
+			t.Logf("Ошибка при остановке Redis контейнера: %v", err)
+		}
+	}()
 
 	redisURL := "localhost:" + redisPort
 	ttl := 30 * time.Second
@@ -114,7 +118,7 @@ func TestRedisCache(t *testing.T) {
 	assert.Nil(t, cachedLinks)
 }
 
-func startRedisContainer(t *testing.T) (testcontainers.Container, string) {
+func startRedisContainer(t *testing.T) (container testcontainers.Container, port string) {
 	ctx := context.Background()
 
 	redisC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -127,8 +131,8 @@ func startRedisContainer(t *testing.T) (testcontainers.Container, string) {
 	})
 	require.NoError(t, err)
 
-	redisPort, err := redisC.MappedPort(ctx, "6379")
+	mappedPort, err := redisC.MappedPort(ctx, "6379")
 	require.NoError(t, err)
 
-	return redisC, redisPort.Port()
+	return redisC, mappedPort.Port()
 }

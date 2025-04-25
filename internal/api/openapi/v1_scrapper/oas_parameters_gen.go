@@ -15,61 +15,6 @@ import (
 	"github.com/ogen-go/ogen/validate"
 )
 
-// DigestGetParams is parameters of GET /digest operation.
-type DigestGetParams struct {
-	TgChatID int64
-}
-
-func unpackDigestGetParams(packed middleware.Parameters) (params DigestGetParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "Tg-Chat-Id",
-			In:   "header",
-		}
-		params.TgChatID = packed[key].(int64)
-	}
-	return params
-}
-
-func decodeDigestGetParams(args [0]string, argsEscaped bool, r *http.Request) (params DigestGetParams, _ error) {
-	h := uri.NewHeaderDecoder(r.Header)
-	// Decode header: Tg-Chat-Id.
-	if err := func() error {
-		cfg := uri.HeaderParameterDecodingConfig{
-			Name:    "Tg-Chat-Id",
-			Explode: false,
-		}
-		if err := h.HasParam(cfg); err == nil {
-			if err := h.DecodeParam(cfg, func(d uri.Decoder) error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToInt64(val)
-				if err != nil {
-					return err
-				}
-
-				params.TgChatID = c
-				return nil
-			}); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "Tg-Chat-Id",
-			In:   "header",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
 // LinksDeleteParams is parameters of DELETE /links operation.
 type LinksDeleteParams struct {
 	TgChatID int64
@@ -235,6 +180,61 @@ func decodeLinksPostParams(args [0]string, argsEscaped bool, r *http.Request) (p
 	return params, nil
 }
 
+// NotificationSettingsPostParams is parameters of POST /notification-settings operation.
+type NotificationSettingsPostParams struct {
+	TgChatID int64
+}
+
+func unpackNotificationSettingsPostParams(packed middleware.Parameters) (params NotificationSettingsPostParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "Tg-Chat-Id",
+			In:   "header",
+		}
+		params.TgChatID = packed[key].(int64)
+	}
+	return params
+}
+
+func decodeNotificationSettingsPostParams(args [0]string, argsEscaped bool, r *http.Request) (params NotificationSettingsPostParams, _ error) {
+	h := uri.NewHeaderDecoder(r.Header)
+	// Decode header: Tg-Chat-Id.
+	if err := func() error {
+		cfg := uri.HeaderParameterDecodingConfig{
+			Name:    "Tg-Chat-Id",
+			Explode: false,
+		}
+		if err := h.HasParam(cfg); err == nil {
+			if err := h.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToInt64(val)
+				if err != nil {
+					return err
+				}
+
+				params.TgChatID = c
+				return nil
+			}); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "Tg-Chat-Id",
+			In:   "header",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // TgChatIDDeleteParams is parameters of DELETE /tg-chat/{id} operation.
 type TgChatIDDeleteParams struct {
 	ID int64
@@ -317,71 +317,6 @@ func unpackTgChatIDPostParams(packed middleware.Parameters) (params TgChatIDPost
 }
 
 func decodeTgChatIDPostParams(args [1]string, argsEscaped bool, r *http.Request) (params TgChatIDPostParams, _ error) {
-	// Decode path: id.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "id",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToInt64(val)
-				if err != nil {
-					return err
-				}
-
-				params.ID = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "id",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
-// TgChatIDPutParams is parameters of PUT /tg-chat/{id} operation.
-type TgChatIDPutParams struct {
-	ID int64
-}
-
-func unpackTgChatIDPutParams(packed middleware.Parameters) (params TgChatIDPutParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "id",
-			In:   "path",
-		}
-		params.ID = packed[key].(int64)
-	}
-	return params
-}
-
-func decodeTgChatIDPutParams(args [1]string, argsEscaped bool, r *http.Request) (params TgChatIDPutParams, _ error) {
 	// Decode path: id.
 	if err := func() error {
 		param := args[0]

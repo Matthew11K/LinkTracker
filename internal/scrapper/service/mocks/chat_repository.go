@@ -52,34 +52,6 @@ func (_m *ChatRepository) Delete(ctx context.Context, id int64) error {
 	return r0
 }
 
-// ExistsChatLink provides a mock function with given fields: ctx, chatID, linkID
-func (_m *ChatRepository) ExistsChatLink(ctx context.Context, chatID int64, linkID int64) (bool, error) {
-	ret := _m.Called(ctx, chatID, linkID)
-
-	if len(ret) == 0 {
-		panic("no return value specified for ExistsChatLink")
-	}
-
-	var r0 bool
-	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, int64, int64) (bool, error)); ok {
-		return rf(ctx, chatID, linkID)
-	}
-	if rf, ok := ret.Get(0).(func(context.Context, int64, int64) bool); ok {
-		r0 = rf(ctx, chatID, linkID)
-	} else {
-		r0 = ret.Get(0).(bool)
-	}
-
-	if rf, ok := ret.Get(1).(func(context.Context, int64, int64) error); ok {
-		r1 = rf(ctx, chatID, linkID)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
-}
-
 // FindByDigestTime provides a mock function with given fields: ctx, hour, minute
 func (_m *ChatRepository) FindByDigestTime(ctx context.Context, hour int, minute int) ([]*models.Chat, error) {
 	ret := _m.Called(ctx, hour, minute)

@@ -36,6 +36,8 @@ CREATE INDEX IF NOT EXISTS idx_filters_link_id ON filters(link_id);
 
 CREATE TABLE IF NOT EXISTS chats (
     id BIGINT PRIMARY KEY,
+    notification_mode VARCHAR(10) NOT NULL DEFAULT 'instant',
+    digest_time TIME NOT NULL DEFAULT '10:00:00',
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );

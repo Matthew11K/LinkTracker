@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 )
@@ -31,4 +32,6 @@ type ChatRepository interface {
 	FindByLinkID(ctx context.Context, linkID int64) ([]*models.Chat, error)
 	GetAll(ctx context.Context) ([]*models.Chat, error)
 	ExistsChatLink(ctx context.Context, chatID, linkID int64) (bool, error)
+	UpdateNotificationSettings(ctx context.Context, chatID int64, mode models.NotificationMode, digestTime time.Time) error
+	FindByDigestTime(ctx context.Context, hour, minute int) ([]*models.Chat, error)
 }

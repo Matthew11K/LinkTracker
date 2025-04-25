@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 
@@ -37,6 +39,8 @@ type ScrapperClient interface {
 	RemoveLink(ctx context.Context, chatID int64, url string) (*models.Link, error)
 
 	GetLinks(ctx context.Context, chatID int64) ([]*models.Link, error)
+
+	UpdateNotificationSettings(ctx context.Context, chatID int64, mode models.NotificationMode, digestTime time.Time) error
 }
 
 type Transactor interface {
@@ -84,6 +88,10 @@ func (s *BotService) ProcessCommand(ctx context.Context, command *models.Command
 		return s.handleUntrackCommand(ctx, command)
 	case models.CommandList:
 		return s.handleListCommand(ctx, command)
+	case models.CommandMode:
+		return s.handleModeCommand(ctx, command)
+	case models.CommandTime:
+		return s.handleTimeCommand(ctx, command)
 	default:
 		return "Неизвестная команда. Введите /help для просмотра доступных команд.",
 			&domainerrors.ErrUnknownCommand{Command: string(command.Type)}
@@ -107,6 +115,10 @@ func (s *BotService) ProcessMessage(ctx context.Context, chatID, _ int64, text, 
 		return s.handleFiltersInput(ctx, chatID, text)
 	case models.StateAwaitingUntrackLink:
 		return s.handleUntrackLinkInput(ctx, chatID, text)
+	case models.StateAwaitingNotificationMode:
+		return s.handleNotificationModeInput(ctx, chatID, text)
+	case models.StateAwaitingDigestTime:
+		return s.handleDigestTimeInput(ctx, chatID, text)
 	default:
 		return "", fmt.Errorf("неизвестное состояние чата: %d", state)
 	}
@@ -154,7 +166,9 @@ func (s *BotService) handleHelpCommand(ctx context.Context, command *models.Comm
 /help - список команд
 /track - начать отслеживание ссылки
 /untrack - прекратить отслеживание ссылки
-/list - показать список отслеживаемых ссылок`, nil
+/list - показать список отслеживаемых ссылок
+/mode - изменить режим уведомлений (мгновенный/дайджест)
+/time - установить время доставки дайджеста`, nil
 }
 
 func (s *BotService) handleTrackCommand(ctx context.Context, command *models.Command) (string, error) {
@@ -357,6 +371,112 @@ func (s *BotService) handleUntrackLinkInput(ctx context.Context, chatID int64, t
 	}
 
 	return "Отслеживание ссылки прекращено.", nil
+}
+
+func (s *BotService) handleModeCommand(ctx context.Context, command *models.Command) (string, error) {
+	err := s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		if err := s.setStateWithEnsureChat(ctx, command.ChatID, models.StateAwaitingNotificationMode); err != nil {
+			return err
+		}
+
+		if err := s.clearDataWithEnsureChat(ctx, command.ChatID); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	return "Выберите режим уведомлений:\n1 - Мгновенные уведомления\n2 - Дайджест (раз в день)", nil
+}
+
+func (s *BotService) handleTimeCommand(ctx context.Context, command *models.Command) (string, error) {
+	err := s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		if err := s.setStateWithEnsureChat(ctx, command.ChatID, models.StateAwaitingDigestTime); err != nil {
+			return err
+		}
+
+		if err := s.clearDataWithEnsureChat(ctx, command.ChatID); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	return "Введите время доставки дайджеста в формате ЧЧ:ММ (например, 09:00)", nil
+}
+
+func (s *BotService) handleNotificationModeInput(ctx context.Context, chatID int64, text string) (string, error) {
+	var mode models.NotificationMode
+
+	switch strings.TrimSpace(text) {
+	case "1":
+		mode = models.NotificationModeInstant
+	case "2":
+		mode = models.NotificationModeDigest
+	default:
+		return "Неверный ввод. Введите 1 для мгновенных уведомлений или 2 для дайджеста.", nil
+	}
+
+	var digestTime time.Time
+	if mode == models.NotificationModeDigest {
+		digestTime = time.Date(0, 1, 1, 10, 0, 0, 0, time.UTC)
+	}
+
+	if err := s.scrapperClient.UpdateNotificationSettings(ctx, chatID, mode, digestTime); err != nil {
+		return "", fmt.Errorf("ошибка при обновлении режима уведомлений: %w", err)
+	}
+
+	err := s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		return s.setStateWithEnsureChat(ctx, chatID, models.StateIdle)
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	if mode == models.NotificationModeInstant {
+		return "Режим мгновенных уведомлений успешно установлен.", nil
+	}
+
+	return "Режим дайджеста успешно установлен. Используйте команду /time для установки времени доставки.", nil
+}
+
+func (s *BotService) handleDigestTimeInput(ctx context.Context, chatID int64, text string) (string, error) {
+	parts := strings.Split(strings.TrimSpace(text), ":")
+	if len(parts) != 2 {
+		return "Неверный формат времени. Используйте формат ЧЧ:ММ (например, 09:00).", nil
+	}
+
+	hour, errHour := strconv.Atoi(parts[0])
+	minute, errMinute := strconv.Atoi(parts[1])
+
+	if errHour != nil || errMinute != nil || hour < 0 || hour > 23 || minute < 0 || minute > 59 {
+		return "Неверное время. Часы должны быть от 0 до 23, минуты от 0 до 59.", nil
+	}
+
+	digestTime := time.Date(0, 1, 1, hour, minute, 0, 0, time.UTC)
+
+	if err := s.scrapperClient.UpdateNotificationSettings(ctx, chatID, models.NotificationModeDigest, digestTime); err != nil {
+		return "", fmt.Errorf("ошибка при обновлении времени доставки дайджеста: %w", err)
+	}
+
+	err := s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		return s.setStateWithEnsureChat(ctx, chatID, models.StateIdle)
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("Время доставки дайджеста установлено на %02d:%02d.", hour, minute), nil
 }
 
 func (s *BotService) setStateWithEnsureChat(ctx context.Context, chatID int64, state models.ChatState) error {

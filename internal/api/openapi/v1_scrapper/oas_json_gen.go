@@ -3,8 +3,6 @@
 package v1_scrapper
 
 import (
-	"time"
-
 	"github.com/go-faster/errors"
 	"github.com/go-faster/jx"
 
@@ -279,218 +277,6 @@ func (s *ApiErrorResponse) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
-func (s *ChatSettings) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields encodes fields.
-func (s *ChatSettings) encodeFields(e *jx.Encoder) {
-	{
-		if s.NotificationMode.Set {
-			e.FieldStart("notificationMode")
-			s.NotificationMode.Encode(e)
-		}
-	}
-	{
-		if s.DigestTime.Set {
-			e.FieldStart("digestTime")
-			s.DigestTime.Encode(e, json.EncodeTime)
-		}
-	}
-}
-
-var jsonFieldsNameOfChatSettings = [2]string{
-	0: "notificationMode",
-	1: "digestTime",
-}
-
-// Decode decodes ChatSettings from json.
-func (s *ChatSettings) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode ChatSettings to nil")
-	}
-	s.setDefaults()
-
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		switch string(k) {
-		case "notificationMode":
-			if err := func() error {
-				s.NotificationMode.Reset()
-				if err := s.NotificationMode.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"notificationMode\"")
-			}
-		case "digestTime":
-			if err := func() error {
-				s.DigestTime.Reset()
-				if err := s.DigestTime.Decode(d, json.DecodeTime); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"digestTime\"")
-			}
-		default:
-			return d.Skip()
-		}
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "decode ChatSettings")
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *ChatSettings) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *ChatSettings) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes ChatSettingsNotificationMode as json.
-func (s ChatSettingsNotificationMode) Encode(e *jx.Encoder) {
-	e.Str(string(s))
-}
-
-// Decode decodes ChatSettingsNotificationMode from json.
-func (s *ChatSettingsNotificationMode) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode ChatSettingsNotificationMode to nil")
-	}
-	v, err := d.StrBytes()
-	if err != nil {
-		return err
-	}
-	// Try to use constant string.
-	switch ChatSettingsNotificationMode(v) {
-	case ChatSettingsNotificationModeInstant:
-		*s = ChatSettingsNotificationModeInstant
-	case ChatSettingsNotificationModeDigest:
-		*s = ChatSettingsNotificationModeDigest
-	default:
-		*s = ChatSettingsNotificationMode(v)
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s ChatSettingsNotificationMode) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *ChatSettingsNotificationMode) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode implements json.Marshaler.
-func (s *DigestResponse) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields encodes fields.
-func (s *DigestResponse) encodeFields(e *jx.Encoder) {
-	{
-		if s.Updates != nil {
-			e.FieldStart("updates")
-			e.ArrStart()
-			for _, elem := range s.Updates {
-				elem.Encode(e)
-			}
-			e.ArrEnd()
-		}
-	}
-	{
-		if s.Size.Set {
-			e.FieldStart("size")
-			s.Size.Encode(e)
-		}
-	}
-}
-
-var jsonFieldsNameOfDigestResponse = [2]string{
-	0: "updates",
-	1: "size",
-}
-
-// Decode decodes DigestResponse from json.
-func (s *DigestResponse) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode DigestResponse to nil")
-	}
-
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		switch string(k) {
-		case "updates":
-			if err := func() error {
-				s.Updates = make([]LinkUpdate, 0)
-				if err := d.Arr(func(d *jx.Decoder) error {
-					var elem LinkUpdate
-					if err := elem.Decode(d); err != nil {
-						return err
-					}
-					s.Updates = append(s.Updates, elem)
-					return nil
-				}); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"updates\"")
-			}
-		case "size":
-			if err := func() error {
-				s.Size.Reset()
-				if err := s.Size.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"size\"")
-			}
-		default:
-			return d.Skip()
-		}
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "decode DigestResponse")
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *DigestResponse) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *DigestResponse) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode implements json.Marshaler.
 func (s *LinkResponse) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -626,120 +412,6 @@ func (s *LinkResponse) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *LinkResponse) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode implements json.Marshaler.
-func (s *LinkUpdate) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields encodes fields.
-func (s *LinkUpdate) encodeFields(e *jx.Encoder) {
-	{
-		if s.ID.Set {
-			e.FieldStart("id")
-			s.ID.Encode(e)
-		}
-	}
-	{
-		if s.URL.Set {
-			e.FieldStart("url")
-			s.URL.Encode(e)
-		}
-	}
-	{
-		if s.Description.Set {
-			e.FieldStart("description")
-			s.Description.Encode(e)
-		}
-	}
-	{
-		if s.UpdateTimestamp.Set {
-			e.FieldStart("updateTimestamp")
-			s.UpdateTimestamp.Encode(e, json.EncodeDateTime)
-		}
-	}
-}
-
-var jsonFieldsNameOfLinkUpdate = [4]string{
-	0: "id",
-	1: "url",
-	2: "description",
-	3: "updateTimestamp",
-}
-
-// Decode decodes LinkUpdate from json.
-func (s *LinkUpdate) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode LinkUpdate to nil")
-	}
-
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		switch string(k) {
-		case "id":
-			if err := func() error {
-				s.ID.Reset()
-				if err := s.ID.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"id\"")
-			}
-		case "url":
-			if err := func() error {
-				s.URL.Reset()
-				if err := s.URL.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"url\"")
-			}
-		case "description":
-			if err := func() error {
-				s.Description.Reset()
-				if err := s.Description.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"description\"")
-			}
-		case "updateTimestamp":
-			if err := func() error {
-				s.UpdateTimestamp.Reset()
-				if err := s.UpdateTimestamp.Decode(d, json.DecodeDateTime); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"updateTimestamp\"")
-			}
-		default:
-			return d.Skip()
-		}
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "decode LinkUpdate")
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *LinkUpdate) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *LinkUpdate) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -911,105 +583,80 @@ func (s *ListLinksResponse) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes ChatSettings as json.
-func (o OptChatSettings) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	o.Value.Encode(e)
+// Encode encodes NotificationSettingsPostBadRequest as json.
+func (s *NotificationSettingsPostBadRequest) Encode(e *jx.Encoder) {
+	unwrapped := (*ApiErrorResponse)(s)
+
+	unwrapped.Encode(e)
 }
 
-// Decode decodes ChatSettings from json.
-func (o *OptChatSettings) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptChatSettings to nil")
+// Decode decodes NotificationSettingsPostBadRequest from json.
+func (s *NotificationSettingsPostBadRequest) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode NotificationSettingsPostBadRequest to nil")
 	}
-	o.Set = true
-	if err := o.Value.Decode(d); err != nil {
-		return err
+	var unwrapped ApiErrorResponse
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
 	}
+	*s = NotificationSettingsPostBadRequest(unwrapped)
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s OptChatSettings) MarshalJSON() ([]byte, error) {
+func (s *NotificationSettingsPostBadRequest) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptChatSettings) UnmarshalJSON(data []byte) error {
+func (s *NotificationSettingsPostBadRequest) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
 
-// Encode encodes ChatSettingsNotificationMode as json.
-func (o OptChatSettingsNotificationMode) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	e.Str(string(o.Value))
+// Encode encodes NotificationSettingsPostNotFound as json.
+func (s *NotificationSettingsPostNotFound) Encode(e *jx.Encoder) {
+	unwrapped := (*ApiErrorResponse)(s)
+
+	unwrapped.Encode(e)
 }
 
-// Decode decodes ChatSettingsNotificationMode from json.
-func (o *OptChatSettingsNotificationMode) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptChatSettingsNotificationMode to nil")
+// Decode decodes NotificationSettingsPostNotFound from json.
+func (s *NotificationSettingsPostNotFound) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode NotificationSettingsPostNotFound to nil")
 	}
-	o.Set = true
-	if err := o.Value.Decode(d); err != nil {
-		return err
+	var unwrapped ApiErrorResponse
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
 	}
+	*s = NotificationSettingsPostNotFound(unwrapped)
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s OptChatSettingsNotificationMode) MarshalJSON() ([]byte, error) {
+func (s *NotificationSettingsPostNotFound) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptChatSettingsNotificationMode) UnmarshalJSON(data []byte) error {
+func (s *NotificationSettingsPostNotFound) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
-}
-
-// Encode encodes time.Time as json.
-func (o OptDateTime) Encode(e *jx.Encoder, format func(*jx.Encoder, time.Time)) {
-	if !o.Set {
-		return
-	}
-	format(e, o.Value)
-}
-
-// Decode decodes time.Time from json.
-func (o *OptDateTime) Decode(d *jx.Decoder, format func(*jx.Decoder) (time.Time, error)) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptDateTime to nil")
-	}
-	o.Set = true
-	v, err := format(d)
-	if err != nil {
-		return err
-	}
-	o.Value = v
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptDateTime) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e, json.EncodeDateTime)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptDateTime) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d, json.DecodeDateTime)
 }
 
 // Encode encodes int32 as json.
@@ -1117,41 +764,6 @@ func (s *OptString) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes time.Time as json.
-func (o OptTime) Encode(e *jx.Encoder, format func(*jx.Encoder, time.Time)) {
-	if !o.Set {
-		return
-	}
-	format(e, o.Value)
-}
-
-// Decode decodes time.Time from json.
-func (o *OptTime) Decode(d *jx.Decoder, format func(*jx.Decoder) (time.Time, error)) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptTime to nil")
-	}
-	o.Set = true
-	v, err := format(d)
-	if err != nil {
-		return err
-	}
-	o.Value = v
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptTime) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e, json.EncodeTime)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptTime) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d, json.DecodeTime)
-}
-
 // Encode encodes url.URL as json.
 func (o OptURI) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -1183,6 +795,39 @@ func (s OptURI) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptURI) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes UpdateNotificationSettingsRequestMode as json.
+func (o OptUpdateNotificationSettingsRequestMode) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes UpdateNotificationSettingsRequestMode from json.
+func (o *OptUpdateNotificationSettingsRequestMode) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptUpdateNotificationSettingsRequestMode to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptUpdateNotificationSettingsRequestMode) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptUpdateNotificationSettingsRequestMode) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -1326,78 +971,139 @@ func (s *TgChatIDDeleteNotFound) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes TgChatIDPutBadRequest as json.
-func (s *TgChatIDPutBadRequest) Encode(e *jx.Encoder) {
-	unwrapped := (*ApiErrorResponse)(s)
-
-	unwrapped.Encode(e)
+// Encode implements json.Marshaler.
+func (s *UpdateNotificationSettingsRequest) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
 }
 
-// Decode decodes TgChatIDPutBadRequest from json.
-func (s *TgChatIDPutBadRequest) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode TgChatIDPutBadRequest to nil")
+// encodeFields encodes fields.
+func (s *UpdateNotificationSettingsRequest) encodeFields(e *jx.Encoder) {
+	{
+		if s.Mode.Set {
+			e.FieldStart("mode")
+			s.Mode.Encode(e)
+		}
 	}
-	var unwrapped ApiErrorResponse
-	if err := func() error {
-		if err := unwrapped.Decode(d); err != nil {
-			return err
+	{
+		if s.DigestHour.Set {
+			e.FieldStart("digestHour")
+			s.DigestHour.Encode(e)
+		}
+	}
+	{
+		if s.DigestMinute.Set {
+			e.FieldStart("digestMinute")
+			s.DigestMinute.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfUpdateNotificationSettingsRequest = [3]string{
+	0: "mode",
+	1: "digestHour",
+	2: "digestMinute",
+}
+
+// Decode decodes UpdateNotificationSettingsRequest from json.
+func (s *UpdateNotificationSettingsRequest) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode UpdateNotificationSettingsRequest to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "mode":
+			if err := func() error {
+				s.Mode.Reset()
+				if err := s.Mode.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"mode\"")
+			}
+		case "digestHour":
+			if err := func() error {
+				s.DigestHour.Reset()
+				if err := s.DigestHour.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"digestHour\"")
+			}
+		case "digestMinute":
+			if err := func() error {
+				s.DigestMinute.Reset()
+				if err := s.DigestMinute.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"digestMinute\"")
+			}
+		default:
+			return d.Skip()
 		}
 		return nil
-	}(); err != nil {
-		return errors.Wrap(err, "alias")
+	}); err != nil {
+		return errors.Wrap(err, "decode UpdateNotificationSettingsRequest")
 	}
-	*s = TgChatIDPutBadRequest(unwrapped)
+
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s *TgChatIDPutBadRequest) MarshalJSON() ([]byte, error) {
+func (s *UpdateNotificationSettingsRequest) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *TgChatIDPutBadRequest) UnmarshalJSON(data []byte) error {
+func (s *UpdateNotificationSettingsRequest) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
 
-// Encode encodes TgChatIDPutNotFound as json.
-func (s *TgChatIDPutNotFound) Encode(e *jx.Encoder) {
-	unwrapped := (*ApiErrorResponse)(s)
-
-	unwrapped.Encode(e)
+// Encode encodes UpdateNotificationSettingsRequestMode as json.
+func (s UpdateNotificationSettingsRequestMode) Encode(e *jx.Encoder) {
+	e.Str(string(s))
 }
 
-// Decode decodes TgChatIDPutNotFound from json.
-func (s *TgChatIDPutNotFound) Decode(d *jx.Decoder) error {
+// Decode decodes UpdateNotificationSettingsRequestMode from json.
+func (s *UpdateNotificationSettingsRequestMode) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode TgChatIDPutNotFound to nil")
+		return errors.New("invalid: unable to decode UpdateNotificationSettingsRequestMode to nil")
 	}
-	var unwrapped ApiErrorResponse
-	if err := func() error {
-		if err := unwrapped.Decode(d); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		return errors.Wrap(err, "alias")
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
 	}
-	*s = TgChatIDPutNotFound(unwrapped)
+	// Try to use constant string.
+	switch UpdateNotificationSettingsRequestMode(v) {
+	case UpdateNotificationSettingsRequestModeInstant:
+		*s = UpdateNotificationSettingsRequestModeInstant
+	case UpdateNotificationSettingsRequestModeDigest:
+		*s = UpdateNotificationSettingsRequestModeDigest
+	default:
+		*s = UpdateNotificationSettingsRequestMode(v)
+	}
+
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s *TgChatIDPutNotFound) MarshalJSON() ([]byte, error) {
+func (s UpdateNotificationSettingsRequestMode) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *TgChatIDPutNotFound) UnmarshalJSON(data []byte) error {
+func (s *UpdateNotificationSettingsRequestMode) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

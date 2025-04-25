@@ -4,7 +4,6 @@ package v1_scrapper
 
 import (
 	"net/url"
-	"time"
 
 	"github.com/go-faster/errors"
 )
@@ -105,105 +104,10 @@ func (s *ApiErrorResponse) SetStacktrace(val []string) {
 	s.Stacktrace = val
 }
 
-func (*ApiErrorResponse) digestGetRes()    {}
 func (*ApiErrorResponse) linksGetRes()     {}
 func (*ApiErrorResponse) linksPostRes()    {}
 func (*ApiErrorResponse) tgChatIDPostRes() {}
-
-// Ref: #/components/schemas/ChatSettings
-type ChatSettings struct {
-	NotificationMode OptChatSettingsNotificationMode `json:"notificationMode"`
-	DigestTime       OptTime                         `json:"digestTime"`
-}
-
-// GetNotificationMode returns the value of NotificationMode.
-func (s *ChatSettings) GetNotificationMode() OptChatSettingsNotificationMode {
-	return s.NotificationMode
-}
-
-// GetDigestTime returns the value of DigestTime.
-func (s *ChatSettings) GetDigestTime() OptTime {
-	return s.DigestTime
-}
-
-// SetNotificationMode sets the value of NotificationMode.
-func (s *ChatSettings) SetNotificationMode(val OptChatSettingsNotificationMode) {
-	s.NotificationMode = val
-}
-
-// SetDigestTime sets the value of DigestTime.
-func (s *ChatSettings) SetDigestTime(val OptTime) {
-	s.DigestTime = val
-}
-
-type ChatSettingsNotificationMode string
-
-const (
-	ChatSettingsNotificationModeInstant ChatSettingsNotificationMode = "instant"
-	ChatSettingsNotificationModeDigest  ChatSettingsNotificationMode = "digest"
-)
-
-// AllValues returns all ChatSettingsNotificationMode values.
-func (ChatSettingsNotificationMode) AllValues() []ChatSettingsNotificationMode {
-	return []ChatSettingsNotificationMode{
-		ChatSettingsNotificationModeInstant,
-		ChatSettingsNotificationModeDigest,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s ChatSettingsNotificationMode) MarshalText() ([]byte, error) {
-	switch s {
-	case ChatSettingsNotificationModeInstant:
-		return []byte(s), nil
-	case ChatSettingsNotificationModeDigest:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *ChatSettingsNotificationMode) UnmarshalText(data []byte) error {
-	switch ChatSettingsNotificationMode(data) {
-	case ChatSettingsNotificationModeInstant:
-		*s = ChatSettingsNotificationModeInstant
-		return nil
-	case ChatSettingsNotificationModeDigest:
-		*s = ChatSettingsNotificationModeDigest
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Ref: #/components/schemas/DigestResponse
-type DigestResponse struct {
-	Updates []LinkUpdate `json:"updates"`
-	Size    OptInt32     `json:"size"`
-}
-
-// GetUpdates returns the value of Updates.
-func (s *DigestResponse) GetUpdates() []LinkUpdate {
-	return s.Updates
-}
-
-// GetSize returns the value of Size.
-func (s *DigestResponse) GetSize() OptInt32 {
-	return s.Size
-}
-
-// SetUpdates sets the value of Updates.
-func (s *DigestResponse) SetUpdates(val []LinkUpdate) {
-	s.Updates = val
-}
-
-// SetSize sets the value of Size.
-func (s *DigestResponse) SetSize(val OptInt32) {
-	s.Size = val
-}
-
-func (*DigestResponse) digestGetRes() {}
+func (*ApiErrorResponse) notificationSettingsPostRes() {}
 
 // Ref: #/components/schemas/LinkResponse
 type LinkResponse struct {
@@ -256,54 +160,6 @@ func (s *LinkResponse) SetFilters(val []string) {
 func (*LinkResponse) linksDeleteRes() {}
 func (*LinkResponse) linksPostRes()   {}
 
-// Ref: #/components/schemas/LinkUpdate
-type LinkUpdate struct {
-	ID              OptInt64    `json:"id"`
-	URL             OptURI      `json:"url"`
-	Description     OptString   `json:"description"`
-	UpdateTimestamp OptDateTime `json:"updateTimestamp"`
-}
-
-// GetID returns the value of ID.
-func (s *LinkUpdate) GetID() OptInt64 {
-	return s.ID
-}
-
-// GetURL returns the value of URL.
-func (s *LinkUpdate) GetURL() OptURI {
-	return s.URL
-}
-
-// GetDescription returns the value of Description.
-func (s *LinkUpdate) GetDescription() OptString {
-	return s.Description
-}
-
-// GetUpdateTimestamp returns the value of UpdateTimestamp.
-func (s *LinkUpdate) GetUpdateTimestamp() OptDateTime {
-	return s.UpdateTimestamp
-}
-
-// SetID sets the value of ID.
-func (s *LinkUpdate) SetID(val OptInt64) {
-	s.ID = val
-}
-
-// SetURL sets the value of URL.
-func (s *LinkUpdate) SetURL(val OptURI) {
-	s.URL = val
-}
-
-// SetDescription sets the value of Description.
-func (s *LinkUpdate) SetDescription(val OptString) {
-	s.Description = val
-}
-
-// SetUpdateTimestamp sets the value of UpdateTimestamp.
-func (s *LinkUpdate) SetUpdateTimestamp(val OptDateTime) {
-	s.UpdateTimestamp = val
-}
-
 type LinksDeleteBadRequest ApiErrorResponse
 
 func (*LinksDeleteBadRequest) linksDeleteRes() {}
@@ -340,143 +196,18 @@ func (s *ListLinksResponse) SetSize(val OptInt32) {
 
 func (*ListLinksResponse) linksGetRes() {}
 
-// NewOptChatSettings returns new OptChatSettings with value set to v.
-func NewOptChatSettings(v ChatSettings) OptChatSettings {
-	return OptChatSettings{
-		Value: v,
-		Set:   true,
-	}
-}
+type NotificationSettingsPostBadRequest ApiErrorResponse
 
-// OptChatSettings is optional ChatSettings.
-type OptChatSettings struct {
-	Value ChatSettings
-	Set   bool
-}
+func (*NotificationSettingsPostBadRequest) notificationSettingsPostRes() {}
 
-// IsSet returns true if OptChatSettings was set.
-func (o OptChatSettings) IsSet() bool { return o.Set }
+type NotificationSettingsPostNotFound ApiErrorResponse
 
-// Reset unsets value.
-func (o *OptChatSettings) Reset() {
-	var v ChatSettings
-	o.Value = v
-	o.Set = false
-}
+func (*NotificationSettingsPostNotFound) notificationSettingsPostRes() {}
 
-// SetTo sets value to v.
-func (o *OptChatSettings) SetTo(v ChatSettings) {
-	o.Set = true
-	o.Value = v
-}
+// NotificationSettingsPostOK is response for NotificationSettingsPost operation.
+type NotificationSettingsPostOK struct{}
 
-// Get returns value and boolean that denotes whether value was set.
-func (o OptChatSettings) Get() (v ChatSettings, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptChatSettings) Or(d ChatSettings) ChatSettings {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptChatSettingsNotificationMode returns new OptChatSettingsNotificationMode with value set to v.
-func NewOptChatSettingsNotificationMode(v ChatSettingsNotificationMode) OptChatSettingsNotificationMode {
-	return OptChatSettingsNotificationMode{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptChatSettingsNotificationMode is optional ChatSettingsNotificationMode.
-type OptChatSettingsNotificationMode struct {
-	Value ChatSettingsNotificationMode
-	Set   bool
-}
-
-// IsSet returns true if OptChatSettingsNotificationMode was set.
-func (o OptChatSettingsNotificationMode) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptChatSettingsNotificationMode) Reset() {
-	var v ChatSettingsNotificationMode
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptChatSettingsNotificationMode) SetTo(v ChatSettingsNotificationMode) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptChatSettingsNotificationMode) Get() (v ChatSettingsNotificationMode, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptChatSettingsNotificationMode) Or(d ChatSettingsNotificationMode) ChatSettingsNotificationMode {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptDateTime returns new OptDateTime with value set to v.
-func NewOptDateTime(v time.Time) OptDateTime {
-	return OptDateTime{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptDateTime is optional time.Time.
-type OptDateTime struct {
-	Value time.Time
-	Set   bool
-}
-
-// IsSet returns true if OptDateTime was set.
-func (o OptDateTime) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptDateTime) Reset() {
-	var v time.Time
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptDateTime) SetTo(v time.Time) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptDateTime) Get() (v time.Time, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptDateTime) Or(d time.Time) time.Time {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
+func (*NotificationSettingsPostOK) notificationSettingsPostRes() {}
 
 // NewOptInt32 returns new OptInt32 with value set to v.
 func NewOptInt32(v int32) OptInt32 {
@@ -616,52 +347,6 @@ func (o OptString) Or(d string) string {
 	return d
 }
 
-// NewOptTime returns new OptTime with value set to v.
-func NewOptTime(v time.Time) OptTime {
-	return OptTime{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptTime is optional time.Time.
-type OptTime struct {
-	Value time.Time
-	Set   bool
-}
-
-// IsSet returns true if OptTime was set.
-func (o OptTime) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptTime) Reset() {
-	var v time.Time
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptTime) SetTo(v time.Time) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptTime) Get() (v time.Time, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptTime) Or(d time.Time) time.Time {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptURI returns new OptURI with value set to v.
 func NewOptURI(v url.URL) OptURI {
 	return OptURI{
@@ -708,6 +393,52 @@ func (o OptURI) Or(d url.URL) url.URL {
 	return d
 }
 
+// NewOptUpdateNotificationSettingsRequestMode returns new OptUpdateNotificationSettingsRequestMode with value set to v.
+func NewOptUpdateNotificationSettingsRequestMode(v UpdateNotificationSettingsRequestMode) OptUpdateNotificationSettingsRequestMode {
+	return OptUpdateNotificationSettingsRequestMode{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptUpdateNotificationSettingsRequestMode is optional UpdateNotificationSettingsRequestMode.
+type OptUpdateNotificationSettingsRequestMode struct {
+	Value UpdateNotificationSettingsRequestMode
+	Set   bool
+}
+
+// IsSet returns true if OptUpdateNotificationSettingsRequestMode was set.
+func (o OptUpdateNotificationSettingsRequestMode) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptUpdateNotificationSettingsRequestMode) Reset() {
+	var v UpdateNotificationSettingsRequestMode
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptUpdateNotificationSettingsRequestMode) SetTo(v UpdateNotificationSettingsRequestMode) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptUpdateNotificationSettingsRequestMode) Get() (v UpdateNotificationSettingsRequestMode, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptUpdateNotificationSettingsRequestMode) Or(d UpdateNotificationSettingsRequestMode) UpdateNotificationSettingsRequestMode {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // Ref: #/components/schemas/RemoveLinkRequest
 type RemoveLinkRequest struct {
 	Link OptURI `json:"link"`
@@ -741,15 +472,84 @@ type TgChatIDPostOK struct{}
 
 func (*TgChatIDPostOK) tgChatIDPostRes() {}
 
-type TgChatIDPutBadRequest ApiErrorResponse
+// Ref: #/components/schemas/UpdateNotificationSettingsRequest
+type UpdateNotificationSettingsRequest struct {
+	// Режим уведомлений: instant или digest.
+	Mode OptUpdateNotificationSettingsRequestMode `json:"mode"`
+	// Час доставки дайджеста (0-23).
+	DigestHour OptInt32 `json:"digestHour"`
+	// Минута доставки дайджеста (0-59).
+	DigestMinute OptInt32 `json:"digestMinute"`
+}
 
-func (*TgChatIDPutBadRequest) tgChatIDPutRes() {}
+// GetMode returns the value of Mode.
+func (s *UpdateNotificationSettingsRequest) GetMode() OptUpdateNotificationSettingsRequestMode {
+	return s.Mode
+}
 
-type TgChatIDPutNotFound ApiErrorResponse
+// GetDigestHour returns the value of DigestHour.
+func (s *UpdateNotificationSettingsRequest) GetDigestHour() OptInt32 {
+	return s.DigestHour
+}
 
-func (*TgChatIDPutNotFound) tgChatIDPutRes() {}
+// GetDigestMinute returns the value of DigestMinute.
+func (s *UpdateNotificationSettingsRequest) GetDigestMinute() OptInt32 {
+	return s.DigestMinute
+}
 
-// TgChatIDPutOK is response for TgChatIDPut operation.
-type TgChatIDPutOK struct{}
+// SetMode sets the value of Mode.
+func (s *UpdateNotificationSettingsRequest) SetMode(val OptUpdateNotificationSettingsRequestMode) {
+	s.Mode = val
+}
 
-func (*TgChatIDPutOK) tgChatIDPutRes() {}
+// SetDigestHour sets the value of DigestHour.
+func (s *UpdateNotificationSettingsRequest) SetDigestHour(val OptInt32) {
+	s.DigestHour = val
+}
+
+// SetDigestMinute sets the value of DigestMinute.
+func (s *UpdateNotificationSettingsRequest) SetDigestMinute(val OptInt32) {
+	s.DigestMinute = val
+}
+
+// Режим уведомлений: instant или digest.
+type UpdateNotificationSettingsRequestMode string
+
+const (
+	UpdateNotificationSettingsRequestModeInstant UpdateNotificationSettingsRequestMode = "instant"
+	UpdateNotificationSettingsRequestModeDigest  UpdateNotificationSettingsRequestMode = "digest"
+)
+
+// AllValues returns all UpdateNotificationSettingsRequestMode values.
+func (UpdateNotificationSettingsRequestMode) AllValues() []UpdateNotificationSettingsRequestMode {
+	return []UpdateNotificationSettingsRequestMode{
+		UpdateNotificationSettingsRequestModeInstant,
+		UpdateNotificationSettingsRequestModeDigest,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s UpdateNotificationSettingsRequestMode) MarshalText() ([]byte, error) {
+	switch s {
+	case UpdateNotificationSettingsRequestModeInstant:
+		return []byte(s), nil
+	case UpdateNotificationSettingsRequestModeDigest:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *UpdateNotificationSettingsRequestMode) UnmarshalText(data []byte) error {
+	switch UpdateNotificationSettingsRequestMode(data) {
+	case UpdateNotificationSettingsRequestModeInstant:
+		*s = UpdateNotificationSettingsRequestModeInstant
+		return nil
+	case UpdateNotificationSettingsRequestModeDigest:
+		*s = UpdateNotificationSettingsRequestModeDigest
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}

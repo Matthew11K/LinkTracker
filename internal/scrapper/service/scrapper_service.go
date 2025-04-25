@@ -12,6 +12,10 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 )
 
+type DigestUpdater interface {
+	AddUpdate(ctx context.Context, update *models.LinkUpdate) error
+}
+
 type BotNotifier interface {
 	SendUpdate(ctx context.Context, update *models.LinkUpdate) error
 }
@@ -32,6 +36,10 @@ type ChatRepository interface {
 	GetAll(ctx context.Context) ([]*models.Chat, error)
 
 	FindByLinkID(ctx context.Context, linkID int64) ([]*models.Chat, error)
+
+	UpdateNotificationSettings(ctx context.Context, chatID int64, mode models.NotificationMode, digestTime time.Time) error
+
+	FindByDigestTime(ctx context.Context, hour, minute int) ([]*models.Chat, error)
 }
 
 type LinkRepository interface {
@@ -66,6 +74,7 @@ type ScrapperService struct {
 	linkRepo       LinkRepository
 	chatRepo       ChatRepository
 	botClient      BotNotifier
+	digestUpdater  DigestUpdater
 	detailsRepo    ContentDetailsRepository
 	linkAnalyzer   *common.LinkAnalyzer
 	updaterFactory *common.LinkUpdaterFactory
@@ -77,6 +86,7 @@ func NewScrapperService(
 	linkRepo LinkRepository,
 	chatRepo ChatRepository,
 	botClient BotNotifier,
+	digestUpdater DigestUpdater,
 	detailsRepo ContentDetailsRepository,
 	updaterFactory *common.LinkUpdaterFactory,
 	linkAnalyzer *common.LinkAnalyzer,
@@ -87,6 +97,7 @@ func NewScrapperService(
 		linkRepo:       linkRepo,
 		chatRepo:       chatRepo,
 		botClient:      botClient,
+		digestUpdater:  digestUpdater,
 		detailsRepo:    detailsRepo,
 		linkAnalyzer:   linkAnalyzer,
 		updaterFactory: updaterFactory,
@@ -331,8 +342,9 @@ func (s *ScrapperService) CheckUpdates(ctx context.Context) error {
 	return nil
 }
 
+//nolint:funlen // Функция целостная, несмотря на длину
 func (s *ScrapperService) notifyChatsAboutUpdate(ctx context.Context, link *models.Link, chatIDs []int64) (bool, error) {
-	s.logger.Info("Отправка уведомления об обновлении",
+	s.logger.Info("Обработка уведомления об обновлении",
 		"linkId", link.ID,
 		"chatsCount", len(chatIDs),
 	)
@@ -363,7 +375,6 @@ func (s *ScrapperService) notifyChatsAboutUpdate(ctx context.Context, link *mode
 			return true, err
 		}
 
-		// Проверяем фильтры только если у нас есть информация об обновлении
 		if s.shouldFilter(updateInfo, link.Filters) {
 			s.logger.Info("Обновление отфильтровано согласно настройкам",
 				"linkId", link.ID,
@@ -371,6 +382,7 @@ func (s *ScrapperService) notifyChatsAboutUpdate(ctx context.Context, link *mode
 				"filters", link.Filters,
 				"author", updateInfo.Author,
 			)
+
 			return true, nil
 		}
 	}
@@ -394,19 +406,62 @@ func (s *ScrapperService) notifyChatsAboutUpdate(ctx context.Context, link *mode
 		UpdateInfo:  updateInfo,
 	}
 
-	err = s.botClient.SendUpdate(ctx, update)
-	if err != nil {
-		s.logger.Error("Ошибка при отправке уведомления об обновлении",
-			"error", err,
-		)
+	var instantChats []int64
 
-		return true, err
+	if s.digestUpdater != nil {
+		if err := s.digestUpdater.AddUpdate(ctx, update); err != nil {
+			s.logger.Error("Ошибка при добавлении обновления в дайджест",
+				"error", err,
+				"linkId", link.ID,
+			)
+		}
+
+		for _, chatID := range chatIDs {
+			chat, err := s.chatRepo.FindByID(ctx, chatID)
+			if err != nil {
+				s.logger.Error("Ошибка при получении информации о чате",
+					"error", err,
+					"chatId", chatID,
+				)
+
+				continue
+			}
+
+			if chat.NotificationMode == models.NotificationModeInstant {
+				instantChats = append(instantChats, chatID)
+			}
+		}
+	} else {
+		instantChats = chatIDs
 	}
 
-	s.logger.Info("Уведомление об обновлении успешно отправлено",
-		"linkID", link.ID,
-		"chatsCount", len(chatIDs),
-	)
+	if len(instantChats) > 0 {
+		instantUpdate := &models.LinkUpdate{
+			ID:          update.ID,
+			URL:         update.URL,
+			Description: update.Description,
+			TgChatIDs:   instantChats,
+			UpdateInfo:  update.UpdateInfo,
+		}
+
+		err = s.botClient.SendUpdate(ctx, instantUpdate)
+		if err != nil {
+			s.logger.Error("Ошибка при отправке мгновенного уведомления об обновлении",
+				"error", err,
+			)
+
+			return true, err
+		}
+
+		s.logger.Info("Мгновенные уведомления успешно отправлены",
+			"linkID", link.ID,
+			"chatsCount", len(instantChats),
+		)
+	} else {
+		s.logger.Info("Нет чатов для мгновенных уведомлений",
+			"linkID", link.ID,
+		)
+	}
 
 	return true, nil
 }
@@ -537,6 +592,7 @@ func (s *ScrapperService) ProcessLink(ctx context.Context, link *models.Link) (b
 			"error", err,
 			"linkID", link.ID,
 		)
+
 		return true, err
 	}
 
@@ -586,6 +642,7 @@ func (s *ScrapperService) shouldFilter(updateInfo *models.UpdateInfo, filters []
 					"filter", filter,
 					"author", updateInfo.Author,
 				)
+
 				return true
 			}
 		default:
@@ -594,4 +651,16 @@ func (s *ScrapperService) shouldFilter(updateInfo *models.UpdateInfo, filters []
 	}
 
 	return false
+}
+
+func (s *ScrapperService) UpdateNotificationSettings(ctx context.Context, chatID int64, mode models.NotificationMode,
+	digestTime time.Time) error {
+	return s.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		_, err := s.chatRepo.FindByID(ctx, chatID)
+		if err != nil {
+			return err
+		}
+
+		return s.chatRepo.UpdateNotificationSettings(ctx, chatID, mode, digestTime)
+	})
 }

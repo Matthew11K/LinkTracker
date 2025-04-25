@@ -2,15 +2,16 @@ package service
 
 import (
 	"log/slog"
-	"time"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/common"
 	"github.com/central-university-dev/go-Matthew11K/internal/config"
+	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/cache"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/notify"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/repository"
 	"github.com/central-university-dev/go-Matthew11K/pkg/txs"
 )
 
+//nolint:revive // Имя ServiceFactory используется для ясности
 type ServiceFactory struct {
 	config         *config.Config
 	logger         *slog.Logger
@@ -61,10 +62,19 @@ func (f *ServiceFactory) CreateScrapperService() (*ScrapperService, error) {
 		return nil, err
 	}
 
+	var digestService *DigestService
+	if f.config.DigestEnabled {
+		digestService, err = f.CreateDigestService()
+		if err != nil {
+			f.logger.Warn("Не удалось создать сервис дайджестов, продолжаем без него", "error", err)
+		}
+	}
+
 	return NewScrapperService(
 		linkRepo,
 		chatRepo,
 		botClient,
+		digestService,
 		detailsRepo,
 		f.updaterFactory,
 		f.linkAnalyzer,
@@ -78,11 +88,6 @@ func (f *ServiceFactory) CreateDigestService() (*DigestService, error) {
 		return nil, nil
 	}
 
-	deliveryTime, err := time.Parse("15:04", f.config.DigestDeliveryTime)
-	if err != nil {
-		return nil, err
-	}
-
 	notifierFactory := notify.NewNotifierFactory(f.config, f.logger)
 
 	botClient, err := notifierFactory.CreateNotifier()
@@ -90,11 +95,27 @@ func (f *ServiceFactory) CreateDigestService() (*DigestService, error) {
 		return nil, err
 	}
 
+	chatRepo, err := f.repoFactory.CreateChatRepository()
+	if err != nil {
+		return nil, err
+	}
+
+	redisCache, err := cache.NewRedisDigestCache(
+		f.config.RedisURL,
+		f.config.RedisPassword,
+		f.config.RedisDB,
+		f.config.RedisCacheTTL,
+		f.logger,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	return NewDigestService(
 		f.config,
 		botClient,
+		redisCache,
+		chatRepo,
 		f.logger,
-		deliveryTime.Hour(),
-		deliveryTime.Minute(),
 	), nil
 }

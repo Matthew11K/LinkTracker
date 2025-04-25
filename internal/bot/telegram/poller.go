@@ -150,6 +150,10 @@ func getCommandType(commandName string) models.CommandType {
 		return models.CommandUntrack
 	case "/list":
 		return models.CommandList
+	case "/mode":
+		return models.CommandMode
+	case "/time":
+		return models.CommandTime
 	default:
 		return models.CommandUnknown
 	}

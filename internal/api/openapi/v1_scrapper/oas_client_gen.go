@@ -27,12 +27,6 @@ func trimTrailingSlashes(u *url.URL) {
 
 // Invoker invokes operations described by OpenAPI v3 specification.
 type Invoker interface {
-	// DigestGet invokes GET /digest operation.
-	//
-	// Получить дайджест обновлений ссылок.
-	//
-	// GET /digest
-	DigestGet(ctx context.Context, params DigestGetParams) (DigestGetRes, error)
 	// LinksDelete invokes DELETE /links operation.
 	//
 	// Убрать отслеживание ссылки.
@@ -51,6 +45,12 @@ type Invoker interface {
 	//
 	// POST /links
 	LinksPost(ctx context.Context, request *AddLinkRequest, params LinksPostParams) (LinksPostRes, error)
+	// NotificationSettingsPost invokes POST /notification-settings operation.
+	//
+	// Обновить настройки уведомлений.
+	//
+	// POST /notification-settings
+	NotificationSettingsPost(ctx context.Context, request *UpdateNotificationSettingsRequest, params NotificationSettingsPostParams) (NotificationSettingsPostRes, error)
 	// TgChatIDDelete invokes DELETE /tg-chat/{id} operation.
 	//
 	// Удалить чат.
@@ -62,13 +62,7 @@ type Invoker interface {
 	// Зарегистрировать чат.
 	//
 	// POST /tg-chat/{id}
-	TgChatIDPost(ctx context.Context, request OptChatSettings, params TgChatIDPostParams) (TgChatIDPostRes, error)
-	// TgChatIDPut invokes PUT /tg-chat/{id} operation.
-	//
-	// Обновить настройки чата.
-	//
-	// PUT /tg-chat/{id}
-	TgChatIDPut(ctx context.Context, request *ChatSettings, params TgChatIDPutParams) (TgChatIDPutRes, error)
+	TgChatIDPost(ctx context.Context, params TgChatIDPostParams) (TgChatIDPostRes, error)
 }
 
 // Client implements OAS client.
@@ -112,91 +106,6 @@ func (c *Client) requestURL(ctx context.Context) *url.URL {
 		return c.serverURL
 	}
 	return u
-}
-
-// DigestGet invokes GET /digest operation.
-//
-// Получить дайджест обновлений ссылок.
-//
-// GET /digest
-func (c *Client) DigestGet(ctx context.Context, params DigestGetParams) (DigestGetRes, error) {
-	res, err := c.sendDigestGet(ctx, params)
-	return res, err
-}
-
-func (c *Client) sendDigestGet(ctx context.Context, params DigestGetParams) (res DigestGetRes, err error) {
-	otelAttrs := []attribute.KeyValue{
-		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/digest"),
-	}
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, DigestGetOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [1]string
-	pathParts[0] = "/digest"
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "GET", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-
-	stage = "EncodeHeaderParams"
-	h := uri.NewHeaderEncoder(r.Header)
-	{
-		cfg := uri.HeaderParameterEncodingConfig{
-			Name:    "Tg-Chat-Id",
-			Explode: false,
-		}
-		if err := h.EncodeParam(cfg, func(e uri.Encoder) error {
-			return e.EncodeValue(conv.Int64ToString(params.TgChatID))
-		}); err != nil {
-			return res, errors.Wrap(err, "encode header")
-		}
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	defer resp.Body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeDigestGetResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
 }
 
 // LinksDelete invokes DELETE /links operation.
@@ -460,6 +369,94 @@ func (c *Client) sendLinksPost(ctx context.Context, request *AddLinkRequest, par
 	return result, nil
 }
 
+// NotificationSettingsPost invokes POST /notification-settings operation.
+//
+// Обновить настройки уведомлений.
+//
+// POST /notification-settings
+func (c *Client) NotificationSettingsPost(ctx context.Context, request *UpdateNotificationSettingsRequest, params NotificationSettingsPostParams) (NotificationSettingsPostRes, error) {
+	res, err := c.sendNotificationSettingsPost(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendNotificationSettingsPost(ctx context.Context, request *UpdateNotificationSettingsRequest, params NotificationSettingsPostParams) (res NotificationSettingsPostRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.HTTPRouteKey.String("/notification-settings"),
+	}
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, NotificationSettingsPostOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [1]string
+	pathParts[0] = "/notification-settings"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeNotificationSettingsPostRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "EncodeHeaderParams"
+	h := uri.NewHeaderEncoder(r.Header)
+	{
+		cfg := uri.HeaderParameterEncodingConfig{
+			Name:    "Tg-Chat-Id",
+			Explode: false,
+		}
+		if err := h.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.Int64ToString(params.TgChatID))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode header")
+		}
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeNotificationSettingsPostResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // TgChatIDDelete invokes DELETE /tg-chat/{id} operation.
 //
 // Удалить чат.
@@ -554,12 +551,12 @@ func (c *Client) sendTgChatIDDelete(ctx context.Context, params TgChatIDDeletePa
 // Зарегистрировать чат.
 //
 // POST /tg-chat/{id}
-func (c *Client) TgChatIDPost(ctx context.Context, request OptChatSettings, params TgChatIDPostParams) (TgChatIDPostRes, error) {
-	res, err := c.sendTgChatIDPost(ctx, request, params)
+func (c *Client) TgChatIDPost(ctx context.Context, params TgChatIDPostParams) (TgChatIDPostRes, error) {
+	res, err := c.sendTgChatIDPost(ctx, params)
 	return res, err
 }
 
-func (c *Client) sendTgChatIDPost(ctx context.Context, request OptChatSettings, params TgChatIDPostParams) (res TgChatIDPostRes, err error) {
+func (c *Client) sendTgChatIDPost(ctx context.Context, params TgChatIDPostParams) (res TgChatIDPostRes, err error) {
 	otelAttrs := []attribute.KeyValue{
 		semconv.HTTPRequestMethodKey.String("POST"),
 		semconv.HTTPRouteKey.String("/tg-chat/{id}"),
@@ -621,9 +618,6 @@ func (c *Client) sendTgChatIDPost(ctx context.Context, request OptChatSettings, 
 	if err != nil {
 		return res, errors.Wrap(err, "create request")
 	}
-	if err := encodeTgChatIDPostRequest(request, r); err != nil {
-		return res, errors.Wrap(err, "encode request")
-	}
 
 	stage = "SendRequest"
 	resp, err := c.cfg.Client.Do(r)
@@ -634,98 +628,6 @@ func (c *Client) sendTgChatIDPost(ctx context.Context, request OptChatSettings, 
 
 	stage = "DecodeResponse"
 	result, err := decodeTgChatIDPostResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
-// TgChatIDPut invokes PUT /tg-chat/{id} operation.
-//
-// Обновить настройки чата.
-//
-// PUT /tg-chat/{id}
-func (c *Client) TgChatIDPut(ctx context.Context, request *ChatSettings, params TgChatIDPutParams) (TgChatIDPutRes, error) {
-	res, err := c.sendTgChatIDPut(ctx, request, params)
-	return res, err
-}
-
-func (c *Client) sendTgChatIDPut(ctx context.Context, request *ChatSettings, params TgChatIDPutParams) (res TgChatIDPutRes, err error) {
-	otelAttrs := []attribute.KeyValue{
-		semconv.HTTPRequestMethodKey.String("PUT"),
-		semconv.HTTPRouteKey.String("/tg-chat/{id}"),
-	}
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, TgChatIDPutOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [2]string
-	pathParts[0] = "/tg-chat/"
-	{
-		// Encode "id" parameter.
-		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "id",
-			Style:   uri.PathStyleSimple,
-			Explode: false,
-		})
-		if err := func() error {
-			return e.EncodeValue(conv.Int64ToString(params.ID))
-		}(); err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		encoded, err := e.Result()
-		if err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		pathParts[1] = encoded
-	}
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "PUT", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-	if err := encodeTgChatIDPutRequest(request, r); err != nil {
-		return res, errors.Wrap(err, "encode request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	defer resp.Body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeTgChatIDPutResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

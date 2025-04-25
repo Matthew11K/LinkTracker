@@ -98,7 +98,7 @@ func (c *Consumer) Start(ctx context.Context) {
 					"offset", msg.Offset,
 				)
 
-				if err := c.processMessage(ctx, msg); err != nil {
+				if err := c.processMessage(ctx, &msg); err != nil {
 					c.logger.Error("Ошибка при обработке сообщения",
 						"error", err,
 					)
@@ -108,7 +108,7 @@ func (c *Consumer) Start(ctx context.Context) {
 	}()
 }
 
-func (c *Consumer) processMessage(ctx context.Context, msg kafka.Message) error {
+func (c *Consumer) processMessage(ctx context.Context, msg *kafka.Message) error {
 	var linkUpdateMessage LinkUpdateMessage
 
 	if err := json.Unmarshal(msg.Value, &linkUpdateMessage); err != nil {

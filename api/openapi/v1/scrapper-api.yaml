@@ -49,6 +49,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
+  /notification-settings:
+    post:
+      summary: Обновить настройки уведомлений
+      parameters:
+        - name: Tg-Chat-Id
+          in: header
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNotificationSettingsRequest'
+        required: true
+      responses:
+        '200':
+          description: Настройки успешно обновлены
+        '400':
+          description: Некорректные параметры запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Чат не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
   /links:
     get:
       summary: Получить все отслеживаемые ссылки
@@ -198,3 +229,22 @@ components:
         link:
           type: string
           format: uri
+    UpdateNotificationSettingsRequest:
+      type: object
+      properties:
+        mode:
+          type: string
+          description: "Режим уведомлений: instant или digest"
+          enum: [instant, digest]
+        digestHour:
+          type: integer
+          format: int32
+          description: "Час доставки дайджеста (0-23)"
+          minimum: 0
+          maximum: 23
+        digestMinute:
+          type: integer
+          format: int32
+          description: "Минута доставки дайджеста (0-59)"
+          minimum: 0
+          maximum: 59

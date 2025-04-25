@@ -8,14 +8,14 @@ import (
 	"github.com/ogen-go/ogen/validate"
 )
 
-func (s *ChatSettings) Validate() error {
+func (s *UpdateNotificationSettingsRequest) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
 	}
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if value, ok := s.NotificationMode.Get(); ok {
+		if value, ok := s.Mode.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
 					return err
@@ -28,7 +28,61 @@ func (s *ChatSettings) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "notificationMode",
+			Name:  "mode",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.DigestHour.Get(); ok {
+			if err := func() error {
+				if err := (validate.Int{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        true,
+					Max:           23,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    0,
+				}).Validate(int64(value)); err != nil {
+					return errors.Wrap(err, "int")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "digestHour",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.DigestMinute.Get(); ok {
+			if err := func() error {
+				if err := (validate.Int{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        true,
+					Max:           59,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    0,
+				}).Validate(int64(value)); err != nil {
+					return errors.Wrap(err, "int")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "digestMinute",
 			Error: err,
 		})
 	}
@@ -38,7 +92,7 @@ func (s *ChatSettings) Validate() error {
 	return nil
 }
 
-func (s ChatSettingsNotificationMode) Validate() error {
+func (s UpdateNotificationSettingsRequestMode) Validate() error {
 	switch s {
 	case "instant":
 		return nil

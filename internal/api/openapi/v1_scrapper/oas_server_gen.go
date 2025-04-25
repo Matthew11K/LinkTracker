@@ -8,12 +8,6 @@ import (
 
 // Handler handles operations described by OpenAPI v3 specification.
 type Handler interface {
-	// DigestGet implements GET /digest operation.
-	//
-	// Получить дайджест обновлений ссылок.
-	//
-	// GET /digest
-	DigestGet(ctx context.Context, params DigestGetParams) (DigestGetRes, error)
 	// LinksDelete implements DELETE /links operation.
 	//
 	// Убрать отслеживание ссылки.
@@ -32,6 +26,12 @@ type Handler interface {
 	//
 	// POST /links
 	LinksPost(ctx context.Context, req *AddLinkRequest, params LinksPostParams) (LinksPostRes, error)
+	// NotificationSettingsPost implements POST /notification-settings operation.
+	//
+	// Обновить настройки уведомлений.
+	//
+	// POST /notification-settings
+	NotificationSettingsPost(ctx context.Context, req *UpdateNotificationSettingsRequest, params NotificationSettingsPostParams) (NotificationSettingsPostRes, error)
 	// TgChatIDDelete implements DELETE /tg-chat/{id} operation.
 	//
 	// Удалить чат.
@@ -43,13 +43,7 @@ type Handler interface {
 	// Зарегистрировать чат.
 	//
 	// POST /tg-chat/{id}
-	TgChatIDPost(ctx context.Context, req OptChatSettings, params TgChatIDPostParams) (TgChatIDPostRes, error)
-	// TgChatIDPut implements PUT /tg-chat/{id} operation.
-	//
-	// Обновить настройки чата.
-	//
-	// PUT /tg-chat/{id}
-	TgChatIDPut(ctx context.Context, req *ChatSettings, params TgChatIDPutParams) (TgChatIDPutRes, error)
+	TgChatIDPost(ctx context.Context, params TgChatIDPostParams) (TgChatIDPostRes, error)
 }
 
 // Server implements http server based on OpenAPI v3 specification and

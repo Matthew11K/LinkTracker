@@ -38,10 +38,20 @@ func (r *ChatRepository) Save(ctx context.Context, chat *models.Chat) error {
 		chat.UpdatedAt = now
 	}
 
+	if chat.NotificationMode == "" {
+		chat.NotificationMode = models.NotificationModeInstant
+	}
+
+	digestTime := time.Date(0, 1, 1, 10, 0, 0, 0, time.UTC)
+	if !chat.DigestTime.IsZero() {
+		digestTime = chat.DigestTime
+	}
+
+	//nolint:lll // не стоит разбивать запрос
 	insertQuery := r.sq.Insert("chats").
-		Columns("id", "created_at", "updated_at").
-		Values(chat.ID, chat.CreatedAt, chat.UpdatedAt).
-		Suffix("ON CONFLICT (id) DO UPDATE SET updated_at = EXCLUDED.updated_at")
+		Columns("id", "notification_mode", "digest_time", "created_at", "updated_at").
+		Values(chat.ID, chat.NotificationMode, digestTime, chat.CreatedAt, chat.UpdatedAt).
+		Suffix("ON CONFLICT (id) DO UPDATE SET notification_mode = EXCLUDED.notification_mode, digest_time = EXCLUDED.digest_time, updated_at = EXCLUDED.updated_at")
 
 	query, args, err := insertQuery.ToSql()
 	if err != nil {
@@ -60,7 +70,7 @@ func (r *ChatRepository) FindByID(ctx context.Context, id int64) (*models.Chat, 
 	querier := txs.GetQuerier(ctx, r.db.Pool)
 
 	selectQuery := r.sq.Select(
-		"c.id", "c.created_at", "c.updated_at",
+		"c.id", "c.notification_mode", "c.digest_time", "c.created_at", "c.updated_at",
 		"COALESCE(array_agg(cl.link_id) FILTER (WHERE cl.link_id IS NOT NULL), '{}') AS links",
 	).
 		From("chats c").
@@ -77,10 +87,14 @@ func (r *ChatRepository) FindByID(ctx context.Context, id int64) (*models.Chat, 
 
 	var chat models.Chat
 
+	var notificationMode string
+
 	var linksArr []int64
 
 	err = row.Scan(
 		&chat.ID,
+		&notificationMode,
+		&chat.DigestTime,
 		&chat.CreatedAt,
 		&chat.UpdatedAt,
 		&linksArr,
@@ -93,6 +107,7 @@ func (r *ChatRepository) FindByID(ctx context.Context, id int64) (*models.Chat, 
 		return nil, &customerrors.ErrSQLExecution{Operation: "поиск чата по ID", Cause: err}
 	}
 
+	chat.NotificationMode = models.NotificationMode(notificationMode)
 	chat.Links = linksArr
 
 	return &chat, nil
@@ -126,6 +141,8 @@ func (r *ChatRepository) Update(ctx context.Context, chat *models.Chat) error {
 	chat.UpdatedAt = time.Now()
 
 	updateQuery := r.sq.Update("chats").
+		Set("notification_mode", chat.NotificationMode).
+		Set("digest_time", chat.DigestTime).
 		Set("updated_at", chat.UpdatedAt).
 		Where(sq.Eq{"id": chat.ID})
 
@@ -144,6 +161,105 @@ func (r *ChatRepository) Update(ctx context.Context, chat *models.Chat) error {
 	}
 
 	return nil
+}
+
+func (r *ChatRepository) UpdateNotificationSettings(ctx context.Context, chatID int64, mode models.NotificationMode,
+	digestTime time.Time) error {
+	querier := txs.GetQuerier(ctx, r.db.Pool)
+
+	updateQuery := r.sq.Update("chats").
+		Set("notification_mode", mode).
+		Set("digest_time", digestTime).
+		Set("updated_at", time.Now()).
+		Where(sq.Eq{"id": chatID})
+
+	query, args, err := updateQuery.ToSql()
+	if err != nil {
+		return &customerrors.ErrBuildSQLQuery{Operation: "обновление настроек уведомлений", Cause: err}
+	}
+
+	result, err := querier.Exec(ctx, query, args...)
+	if err != nil {
+		return &customerrors.ErrSQLExecution{Operation: "обновление настроек уведомлений", Cause: err}
+	}
+
+	if result.RowsAffected() == 0 {
+		return &customerrors.ErrChatNotFound{ChatID: chatID}
+	}
+
+	return nil
+}
+
+func (r *ChatRepository) FindByDigestTime(ctx context.Context, hour, minute int) ([]*models.Chat, error) {
+	querier := txs.GetQuerier(ctx, r.db.Pool)
+
+	timeStr := fmt.Sprintf("%02d:%02d", hour, minute)
+
+	selectQuery := r.sq.Select(
+		"c.id", "c.notification_mode", "c.digest_time", "c.created_at", "c.updated_at",
+		"COALESCE(array_agg(cl.link_id) FILTER (WHERE cl.link_id IS NOT NULL), '{}') AS links",
+	).
+		From("chats c").
+		LeftJoin("chat_links cl ON c.id = cl.chat_id").
+		Where(sq.Eq{"c.notification_mode": models.NotificationModeDigest}).
+		Where(sq.Expr("to_char(c.digest_time, 'HH24:MI') = ?", timeStr)).
+		GroupBy("c.id").
+		OrderBy("c.id")
+
+	query, args, err := selectQuery.ToSql()
+	if err != nil {
+		return nil, &customerrors.ErrBuildSQLQuery{
+			Operation: fmt.Sprintf("поиск чатов с временем дайджеста %s", timeStr),
+			Cause:     err,
+		}
+	}
+
+	rows, err := querier.Query(ctx, query, args...)
+	if err != nil {
+		return nil, &customerrors.ErrSQLExecution{
+			Operation: fmt.Sprintf("поиск чатов с временем дайджеста %s", timeStr),
+			Cause:     err,
+		}
+	}
+	defer rows.Close()
+
+	var chats []*models.Chat
+
+	for rows.Next() {
+		var chat models.Chat
+
+		var notificationMode string
+
+		var linksArr []int64
+
+		err := rows.Scan(
+			&chat.ID,
+			&notificationMode,
+			&chat.DigestTime,
+			&chat.CreatedAt,
+			&chat.UpdatedAt,
+			&linksArr,
+		)
+		if err != nil {
+			return nil, &customerrors.ErrSQLExecution{
+				Operation: "сканирование данных чата",
+				Cause:     err,
+			}
+		}
+
+		chat.NotificationMode = models.NotificationMode(notificationMode)
+		chat.Links = linksArr
+		chats = append(chats, &chat)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, &customerrors.ErrSQLExecution{
+			Operation: "итерация по результатам запроса чатов",
+			Cause:     err,
+		}
+	}
+
+	return chats, nil
 }
 
 func (r *ChatRepository) AddLink(ctx context.Context, chatID, linkID int64) error {
@@ -217,7 +333,7 @@ func (r *ChatRepository) RemoveLink(ctx context.Context, chatID, linkID int64) e
 func (r *ChatRepository) FindByLinkID(ctx context.Context, linkID int64) ([]*models.Chat, error) {
 	querier := txs.GetQuerier(ctx, r.db.Pool)
 
-	selectQuery := r.sq.Select("c.id", "c.created_at", "c.updated_at").
+	selectQuery := r.sq.Select("c.id", "c.notification_mode", "c.digest_time", "c.created_at", "c.updated_at").
 		From("chats c").
 		Join("chat_links cl ON c.id = cl.chat_id").
 		Where(sq.Eq{"cl.link_id": linkID})
@@ -238,11 +354,14 @@ func (r *ChatRepository) FindByLinkID(ctx context.Context, linkID int64) ([]*mod
 	for rows.Next() {
 		chat := &models.Chat{}
 
-		err := rows.Scan(&chat.ID, &chat.CreatedAt, &chat.UpdatedAt)
+		var notificationMode string
+
+		err := rows.Scan(&chat.ID, &notificationMode, &chat.DigestTime, &chat.CreatedAt, &chat.UpdatedAt)
 		if err != nil {
 			return nil, &customerrors.ErrSQLExecution{Operation: "чтение чата", Cause: err}
 		}
 
+		chat.NotificationMode = models.NotificationMode(notificationMode)
 		chat.Links = []int64{}
 		chats = append(chats, chat)
 	}
@@ -270,7 +389,7 @@ func (r *ChatRepository) GetAll(ctx context.Context) ([]*models.Chat, error) {
 	querier := txs.GetQuerier(ctx, r.db.Pool)
 
 	selectQuery := r.sq.Select(
-		"c.id", "c.created_at", "c.updated_at",
+		"c.id", "c.notification_mode", "c.digest_time", "c.created_at", "c.updated_at",
 		"COALESCE(array_agg(cl.link_id) FILTER (WHERE cl.link_id IS NOT NULL), '{}') AS links",
 	).
 		From("chats c").
@@ -294,18 +413,23 @@ func (r *ChatRepository) GetAll(ctx context.Context) ([]*models.Chat, error) {
 	for rows.Next() {
 		var chat models.Chat
 
+		var notificationMode string
+
 		var linksArr []int64
 
 		err := rows.Scan(
 			&chat.ID,
+			&notificationMode,
+			&chat.DigestTime,
 			&chat.CreatedAt,
 			&chat.UpdatedAt,
 			&linksArr,
 		)
 		if err != nil {
-			return nil, &customerrors.ErrSQLExecution{Operation: "сканирование чата", Cause: err}
+			return nil, &customerrors.ErrSQLExecution{Operation: "чтение чата", Cause: err}
 		}
 
+		chat.NotificationMode = models.NotificationMode(notificationMode)
 		chat.Links = linksArr
 		chats = append(chats, &chat)
 	}

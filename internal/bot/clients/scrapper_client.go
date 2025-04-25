@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"time"
 
-	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1/v1_scrapper"
-	"github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
+	v1_scrapper "github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1_scrapper"
+	domainerrors "github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 )
 
@@ -36,14 +37,14 @@ func (c *ScrapperClient) RegisterChat(ctx context.Context, chatID int64) error {
 
 	resp, err := c.client.TgChatIDPost(ctx, params)
 	if err != nil {
-		return &errors.ErrInternalServer{Message: "не удалось выполнить запрос: " + err.Error()}
+		return &domainerrors.ErrInternalServer{Message: "не удалось выполнить запрос: " + err.Error()}
 	}
 
 	switch resp.(type) {
 	case *v1_scrapper.TgChatIDPostOK:
 		return nil
 	default:
-		return &errors.ErrInternalServer{Message: "неожиданный ответ от сервера"}
+		return &domainerrors.ErrInternalServer{Message: "неожиданный ответ от сервера"}
 	}
 }
 
@@ -54,23 +55,23 @@ func (c *ScrapperClient) DeleteChat(ctx context.Context, chatID int64) error {
 
 	resp, err := c.client.TgChatIDDelete(ctx, params)
 	if err != nil {
-		return &errors.ErrInternalServer{Message: "не удалось выполнить запрос: " + err.Error()}
+		return &domainerrors.ErrInternalServer{Message: "не удалось выполнить запрос: " + err.Error()}
 	}
 
 	switch resp.(type) {
 	case *v1_scrapper.TgChatIDDeleteOK:
 		return nil
 	case *v1_scrapper.TgChatIDDeleteNotFound:
-		return &errors.ErrChatNotFound{ChatID: chatID}
+		return &domainerrors.ErrChatNotFound{ChatID: chatID}
 	default:
-		return &errors.ErrInternalServer{Message: fmt.Sprintf("неожиданный ответ от сервера: %T", resp)}
+		return &domainerrors.ErrInternalServer{Message: fmt.Sprintf("неожиданный ответ от сервера: %T", resp)}
 	}
 }
 
 func (c *ScrapperClient) AddLink(ctx context.Context, chatID int64, linkURL string, tags, filters []string) (*models.Link, error) {
 	parsedURL, err := url.Parse(linkURL)
 	if err != nil {
-		return nil, &errors.ErrInvalidArgument{Message: "некорректный URL"}
+		return nil, &domainerrors.ErrInvalidArgument{Message: "некорректный URL"}
 	}
 
 	req := &v1_scrapper.AddLinkRequest{
@@ -86,19 +87,19 @@ func (c *ScrapperClient) AddLink(ctx context.Context, chatID int64, linkURL stri
 	resp, err := c.client.LinksPost(ctx, req, params)
 	if err != nil {
 		if err.Error() == "Ссылка уже существует" {
-			return nil, &errors.ErrLinkAlreadyExists{URL: linkURL}
+			return nil, &domainerrors.ErrLinkAlreadyExists{URL: linkURL}
 		}
 
 		if err.Error() == "Неподдерживаемый тип ссылки" {
-			return nil, &errors.ErrUnsupportedLinkType{URL: linkURL}
+			return nil, &domainerrors.ErrUnsupportedLinkType{URL: linkURL}
 		}
 
-		return nil, &errors.ErrInternalServer{Message: "не удалось выполнить запрос: " + err.Error()}
+		return nil, &domainerrors.ErrInternalServer{Message: "не удалось выполнить запрос: " + err.Error()}
 	}
 
 	linkResp, ok := resp.(*v1_scrapper.LinkResponse)
 	if !ok {
-		return nil, &errors.ErrInternalServer{Message: "неожиданный ответ от сервера"}
+		return nil, &domainerrors.ErrInternalServer{Message: "неожиданный ответ от сервера"}
 	}
 
 	link := &models.Link{
@@ -117,7 +118,7 @@ func (c *ScrapperClient) AddLink(ctx context.Context, chatID int64, linkURL stri
 func (c *ScrapperClient) RemoveLink(ctx context.Context, chatID int64, linkURL string) (*models.Link, error) {
 	parsedURL, err := url.Parse(linkURL)
 	if err != nil {
-		return nil, &errors.ErrInvalidArgument{Message: "некорректный URL"}
+		return nil, &domainerrors.ErrInvalidArgument{Message: "некорректный URL"}
 	}
 
 	req := &v1_scrapper.RemoveLinkRequest{
@@ -131,15 +132,15 @@ func (c *ScrapperClient) RemoveLink(ctx context.Context, chatID int64, linkURL s
 	resp, err := c.client.LinksDelete(ctx, req, params)
 	if err != nil {
 		if err.Error() == "Ссылка не найдена" {
-			return nil, &errors.ErrLinkNotFound{URL: linkURL}
+			return nil, &domainerrors.ErrLinkNotFound{URL: linkURL}
 		}
 
-		return nil, &errors.ErrInternalServer{Message: "не удалось выполнить запрос: " + err.Error()}
+		return nil, &domainerrors.ErrInternalServer{Message: "не удалось выполнить запрос: " + err.Error()}
 	}
 
 	linkResp, ok := resp.(*v1_scrapper.LinkResponse)
 	if !ok {
-		return nil, &errors.ErrInternalServer{Message: "неожиданный ответ от сервера"}
+		return nil, &domainerrors.ErrInternalServer{Message: "неожиданный ответ от сервера"}
 	}
 
 	link := &models.Link{
@@ -162,12 +163,12 @@ func (c *ScrapperClient) GetLinks(ctx context.Context, chatID int64) ([]*models.
 
 	resp, err := c.client.LinksGet(ctx, params)
 	if err != nil {
-		return nil, &errors.ErrInternalServer{Message: "не удалось выполнить запрос: " + err.Error()}
+		return nil, &domainerrors.ErrInternalServer{Message: "не удалось выполнить запрос: " + err.Error()}
 	}
 
 	listResp, ok := resp.(*v1_scrapper.ListLinksResponse)
 	if !ok {
-		return nil, &errors.ErrInternalServer{Message: "неожиданный ответ от сервера"}
+		return nil, &domainerrors.ErrInternalServer{Message: "неожиданный ответ от сервера"}
 	}
 
 	links := make([]*models.Link, 0, len(listResp.Links))
@@ -188,4 +189,45 @@ func (c *ScrapperClient) GetLinks(ctx context.Context, chatID int64) ([]*models.
 	}
 
 	return links, nil
+}
+
+func (c *ScrapperClient) UpdateNotificationSettings(ctx context.Context, chatID int64, mode models.NotificationMode,
+	digestTime time.Time) error {
+	var apiMode v1_scrapper.UpdateNotificationSettingsRequestMode
+
+	var req v1_scrapper.UpdateNotificationSettingsRequest
+
+	switch mode {
+	case models.NotificationModeInstant:
+		apiMode = v1_scrapper.UpdateNotificationSettingsRequestModeInstant
+		req.Mode = v1_scrapper.NewOptUpdateNotificationSettingsRequestMode(apiMode)
+	case models.NotificationModeDigest:
+		apiMode = v1_scrapper.UpdateNotificationSettingsRequestModeDigest
+
+		req.Mode = v1_scrapper.NewOptUpdateNotificationSettingsRequestMode(apiMode)
+		if !digestTime.IsZero() {
+			req.DigestHour = v1_scrapper.NewOptInt32(int32(digestTime.Hour()))     //nolint:gosec // значения часов и минут валидны
+			req.DigestMinute = v1_scrapper.NewOptInt32(int32(digestTime.Minute())) //nolint:gosec // значения часов и минут валидны
+		}
+	default:
+		return &domainerrors.ErrUnknownNotificationMode{Mode: string(mode)}
+	}
+
+	params := v1_scrapper.NotificationSettingsPostParams{
+		TgChatID: chatID,
+	}
+
+	resp, err := c.client.NotificationSettingsPost(ctx, &req, params)
+	if err != nil {
+		return fmt.Errorf("не удалось обновить настройки уведомлений: %w", err)
+	}
+
+	switch resp.(type) {
+	case *v1_scrapper.NotificationSettingsPostOK:
+		return nil
+	case *v1_scrapper.NotificationSettingsPostNotFound:
+		return &domainerrors.ErrChatNotFound{ChatID: chatID}
+	default:
+		return &domainerrors.ErrInternalServer{Message: "неожиданный ответ сервера при обновлении настроек уведомлений"}
+	}
 }

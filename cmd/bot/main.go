@@ -13,7 +13,7 @@ import (
 
 	"log/slog"
 
-	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1/v1_bot"
+	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1_bot"
 	"github.com/central-university-dev/go-Matthew11K/internal/bot/cache"
 	"github.com/central-university-dev/go-Matthew11K/internal/bot/clients"
 	"github.com/central-university-dev/go-Matthew11K/internal/bot/clients/kafka"
@@ -29,7 +29,8 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/pkg/txs"
 )
 
-func gracefulShutdown(server *http.Server, poller *telegram.Poller, kafkaConsumer *kafka.Consumer, redisCache *cache.RedisLinkCache, stopCh <-chan struct{}, appLogger *slog.Logger) {
+func gracefulShutdown(server *http.Server, poller *telegram.Poller, kafkaConsumer *kafka.Consumer,
+	redisCache *cache.RedisLinkCache, stopCh <-chan struct{}, appLogger *slog.Logger) {
 	<-stopCh
 	appLogger.Info("Получен сигнал завершения")
 
@@ -70,6 +71,8 @@ func setupTelegramCommands(telegramClient domain.TelegramClientAPI, appLogger *s
 		{Command: "track", Description: "Отслеживать ссылку"},
 		{Command: "untrack", Description: "Прекратить отслеживание ссылки"},
 		{Command: "list", Description: "Список отслеживаемых ссылок"},
+		{Command: "mode", Description: "Изменить режим уведомлений (мгновенный/дайджест)"},
+		{Command: "time", Description: "Установить время доставки дайджеста"},
 	}
 
 	ctx := context.Background()
@@ -193,6 +196,7 @@ func run() error {
 			)
 		} else {
 			appLogger.Info("Кэш Redis успешно инициализирован")
+
 			cachedService := baseBotService.WithCache(redisCache)
 			botService = cachedService
 			messageHandler = cachedService

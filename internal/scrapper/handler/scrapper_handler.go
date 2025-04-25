@@ -5,10 +5,11 @@ import (
 	"errors"
 	"math"
 	"net/url"
+	"time"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 
-	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1/v1_scrapper"
+	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1_scrapper"
 	domainerrors "github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
 )
 
@@ -22,6 +23,8 @@ type ScrapperService interface {
 	RemoveLink(ctx context.Context, chatID int64, url string) (*models.Link, error)
 
 	GetLinks(ctx context.Context, chatID int64) ([]*models.Link, error)
+
+	UpdateNotificationSettings(ctx context.Context, chatID int64, mode models.NotificationMode, digestTime time.Time) error
 }
 
 type TagService interface {
@@ -211,4 +214,66 @@ func (h *ScrapperHandler) LinksGet(ctx context.Context, params v1_scrapper.Links
 	}
 
 	return resp, nil
+}
+
+func (h *ScrapperHandler) NotificationSettingsPost(ctx context.Context, req *v1_scrapper.UpdateNotificationSettingsRequest,
+	params v1_scrapper.NotificationSettingsPostParams) (v1_scrapper.NotificationSettingsPostRes, error) {
+	if !req.Mode.IsSet() {
+		errResp := &v1_scrapper.NotificationSettingsPostBadRequest{
+			Description: v1_scrapper.NewOptString("Режим уведомлений не указан"),
+		}
+
+		return errResp, &domainerrors.ErrMissingRequiredField{FieldName: "Mode"}
+	}
+
+	var mode models.NotificationMode
+
+	switch req.Mode.Value {
+	case v1_scrapper.UpdateNotificationSettingsRequestModeInstant:
+		mode = models.NotificationModeInstant
+	case v1_scrapper.UpdateNotificationSettingsRequestModeDigest:
+		mode = models.NotificationModeDigest
+	default:
+		errResp := &v1_scrapper.NotificationSettingsPostBadRequest{
+			Description: v1_scrapper.NewOptString("Неизвестный режим уведомлений"),
+		}
+
+		return errResp, &domainerrors.ErrInvalidValue{FieldName: "Mode", Value: string(req.Mode.Value)}
+	}
+
+	var digestTime time.Time
+
+	if mode == models.NotificationModeDigest {
+		if !req.DigestHour.IsSet() || !req.DigestMinute.IsSet() {
+			errResp := &v1_scrapper.NotificationSettingsPostBadRequest{
+				Description: v1_scrapper.NewOptString("Для режима дайджеста необходимо указать время доставки"),
+			}
+
+			return errResp, &domainerrors.ErrMissingRequiredField{FieldName: "DigestTime"}
+		}
+
+		now := time.Now().UTC()
+		digestTime = time.Date(now.Year(), now.Month(), now.Day(),
+			int(req.DigestHour.Value), int(req.DigestMinute.Value), 0, 0, time.UTC)
+	}
+
+	err := h.scrapperService.UpdateNotificationSettings(ctx, params.TgChatID, mode, digestTime)
+	if err != nil {
+		var chatNotFoundErr *domainerrors.ErrChatNotFound
+		if errors.As(err, &chatNotFoundErr) {
+			errResp := &v1_scrapper.NotificationSettingsPostNotFound{
+				Description: v1_scrapper.NewOptString("Чат не найден"),
+			}
+
+			return errResp, err
+		}
+
+		errResp := &v1_scrapper.NotificationSettingsPostBadRequest{
+			Description: v1_scrapper.NewOptString("Ошибка при обновлении настроек уведомлений"),
+		}
+
+		return errResp, err
+	}
+
+	return &v1_scrapper.NotificationSettingsPostOK{}, nil
 }
