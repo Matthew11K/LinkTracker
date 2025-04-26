@@ -255,3 +255,15 @@ func (e *ErrInvalidValue) Is(target error) bool {
 	_, ok := target.(*ErrInvalidValue)
 	return ok
 }
+
+// ErrMissingURLInUpdate возникает, когда в сообщении LinkUpdate отсутствует обязательное поле URL.
+type ErrMissingURLInUpdate struct{}
+
+func (e *ErrMissingURLInUpdate) Error() string {
+	return "отсутствует обязательное поле URL в сообщении LinkUpdate"
+}
+
+func (e *ErrMissingURLInUpdate) Is(target error) bool {
+	_, ok := target.(*ErrMissingURLInUpdate)
+	return ok
+}

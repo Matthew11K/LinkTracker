@@ -3,11 +3,11 @@ package kafka
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
+	boterrors "github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 	"github.com/segmentio/kafka-go"
 )
@@ -128,14 +128,15 @@ func (c *Consumer) processMessage(ctx context.Context, msg *kafka.Message) error
 	if linkUpdateMessage.URL == "" {
 		errMsg := "отсутствует обязательное поле URL"
 		c.logger.Error(errMsg)
+		newErr := &boterrors.ErrMissingURLInUpdate{}
 
-		if sendErr := c.sendToDLQ(ctx, msg.Value, errMsg); sendErr != nil {
+		if sendErr := c.sendToDLQ(ctx, msg.Value, newErr.Error()); sendErr != nil {
 			c.logger.Error("Ошибка при отправке сообщения в DLQ",
 				"error", sendErr,
 			)
 		}
 
-		return errors.New(errMsg)
+		return newErr
 	}
 
 	update := &models.LinkUpdate{
