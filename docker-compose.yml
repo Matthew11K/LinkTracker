@@ -1,0 +1,176 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    restart: "no"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - link_tracker_network
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - link_tracker_network
+    healthcheck:
+      test: ["CMD-SHELL", "echo srvr | nc zookeeper 2181 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - link_tracker_network
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server kafka:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - link_tracker_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 2s
+      retries: 3
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    restart: "no"
+    container_name: link_tracker_bot
+    networks:
+      - link_tracker_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - BOT_BASE_URL=${BOT_BASE_URL}
+      - SCRAPPER_BASE_URL=${SCRAPPER_BASE_URL}
+      - DATABASE_ACCESS_TYPE=${DATABASE_ACCESS_TYPE}
+      - DATABASE_BATCH_SIZE=${DATABASE_BATCH_SIZE}
+      - DATABASE_MAX_CONNECTIONS=${DATABASE_MAX_CONNECTIONS}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - KAFKA_BROKERS=${KAFKA_BROKERS}
+      - MESSAGE_TRANSPORT=${MESSAGE_TRANSPORT}
+      - TOPIC_LINK_UPDATES=${TOPIC_LINK_UPDATES}
+      - TOPIC_DEAD_LETTER_QUEUE=${TOPIC_DEAD_LETTER_QUEUE}
+      - REDIS_URL=${REDIS_URL}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_DB=${REDIS_DB}
+      - REDIS_CACHE_TTL=${REDIS_CACHE_TTL}
+      - NOTIFICATION_MODE=${NOTIFICATION_MODE}
+
+  scrapper:
+    build:
+      context: .
+      dockerfile: Dockerfile.scrapper
+    restart: "no"
+    container_name: link_tracker_scrapper
+    networks:
+      - link_tracker_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - BOT_BASE_URL=${BOT_BASE_URL}
+      - SCRAPPER_BASE_URL=${SCRAPPER_BASE_URL}
+      - SCHEDULER_CHECK_INTERVAL=${SCHEDULER_CHECK_INTERVAL}
+      - USE_PARALLEL_SCHEDULER=${USE_PARALLEL_SCHEDULER}
+      - DATABASE_ACCESS_TYPE=${DATABASE_ACCESS_TYPE}
+      - DATABASE_BATCH_SIZE=${DATABASE_BATCH_SIZE}
+      - DATABASE_MAX_CONNECTIONS=${DATABASE_MAX_CONNECTIONS}
+      - GITHUB_API_TOKEN=${GITHUB_API_TOKEN}
+      - STACKOVERFLOW_API_TOKEN=${STACKOVERFLOW_API_TOKEN}
+      - KAFKA_BROKERS=${KAFKA_BROKERS}
+      - MESSAGE_TRANSPORT=${MESSAGE_TRANSPORT}
+      - TOPIC_LINK_UPDATES=${TOPIC_LINK_UPDATES}
+      - TOPIC_DEAD_LETTER_QUEUE=${TOPIC_DEAD_LETTER_QUEUE}
+      - DIGEST_ENABLED=${DIGEST_ENABLED}
+      - DIGEST_DELIVERY_TIME=${DIGEST_DELIVERY_TIME}
+      - REDIS_URL=${REDIS_URL}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_DB=${REDIS_DB}
+
+  migrations:
+    image: migrate/migrate
+    container_name: link_tracker_migrations
+    networks:
+      - link_tracker_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["-path", "/migrations", "-database", "${DATABASE_URL}", "up"]
+    volumes:
+      - ./migrations:/migrations
+    restart: on-failure
+
+networks:
+  link_tracker_network:
+    driver: bridge
+
+volumes:
+  postgres_data: 
+  kafka_data:
+  redis_data: 
