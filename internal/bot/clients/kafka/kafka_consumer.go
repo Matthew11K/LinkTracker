@@ -128,6 +128,7 @@ func (c *Consumer) processMessage(ctx context.Context, msg *kafka.Message) error
 	if linkUpdateMessage.URL == "" {
 		errMsg := "отсутствует обязательное поле URL"
 		c.logger.Error(errMsg)
+
 		newErr := &boterrors.ErrMissingURLInUpdate{}
 
 		if sendErr := c.sendToDLQ(ctx, msg.Value, newErr.Error()); sendErr != nil {

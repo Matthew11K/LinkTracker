@@ -319,6 +319,7 @@ func TestKafkaIntegration(t *testing.T) {
 	go func() {
 		defer consumerWG.Done()
 		logger.Info("Запуск consumer.Start...")
+
 		defer func() {
 			if r := recover(); r != nil {
 				logger.Error("Паника в consumer.Start", slog.Any("panic", r))
@@ -423,7 +424,9 @@ func TestKafkaIntegration(t *testing.T) {
 	cancel()
 
 	logger.Info("Ожидание завершения consumerWG.Wait()...")
+
 	waitCh := make(chan struct{})
+
 	go func() {
 		consumerWG.Wait()
 		close(waitCh)

@@ -31,7 +31,6 @@ func NewHTTPBotNotifier(baseURL string, logger *slog.Logger) (*HTTPBotNotifier, 
 	}, nil
 }
 
-//nolint:funlen // Длина функции обусловлена необходимостью последовательной обработки данных и формирования запроса.
 func (n *HTTPBotNotifier) SendUpdate(ctx context.Context, update *models.LinkUpdate) error {
 	n.logger.Info("Отправка уведомления в бота",
 		"linkID", update.ID,
@@ -39,48 +38,13 @@ func (n *HTTPBotNotifier) SendUpdate(ctx context.Context, update *models.LinkUpd
 		"chats", len(update.TgChatIDs),
 	)
 
-	description := update.Description
+	description := formatDescription(update)
 
 	if update.UpdateInfo != nil {
-		info := update.UpdateInfo
-
-		switch info.ContentType {
-		case "repository", "issue", "pull_request":
-			description = fmt.Sprintf("%s\n\n🔷 GitHub обновление 🔷\n"+
-				"📎 Название: %s\n"+
-				"👤 Автор: %s\n"+
-				"⏱️ Время: %s\n"+
-				"📄 Тип: %s\n"+
-				"📝 Превью:\n%s",
-				description, info.Title, info.Author,
-				info.UpdatedAt.Format("2006-01-02 15:04:05"),
-				info.ContentType, info.TextPreview)
-		case "question", "answer", "comment":
-			description = fmt.Sprintf("%s\n\n🔶 StackOverflow обновление 🔶\n"+
-				"📎 Тема вопроса: %s\n"+
-				"👤 Пользователь: %s\n"+
-				"⏱️ Время: %s\n"+
-				"📄 Тип: %s\n"+
-				"📝 Превью:\n%s",
-				description, info.Title, info.Author,
-				info.UpdatedAt.Format("2006-01-02 15:04:05"),
-				info.ContentType, info.TextPreview)
-		default:
-			description = fmt.Sprintf("%s\n\n🔹 Обновление ресурса 🔹\n"+
-				"📎 Заголовок: %s\n"+
-				"👤 Автор: %s\n"+
-				"⏱️ Время: %s\n"+
-				"📄 Тип: %s\n"+
-				"📝 Превью:\n%s",
-				description, info.Title, info.Author,
-				info.UpdatedAt.Format("2006-01-02 15:04:05"),
-				info.ContentType, info.TextPreview)
-		}
-
 		n.logger.Info("Сформировано детализированное уведомление",
 			"linkID", update.ID,
-			"title", info.Title,
-			"type", info.ContentType,
+			"title", update.UpdateInfo.Title,
+			"type", update.UpdateInfo.ContentType,
 		)
 	}
 
