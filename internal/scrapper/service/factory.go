@@ -40,7 +40,7 @@ func NewServiceFactory(
 	}
 }
 
-func (f *ServiceFactory) CreateScrapperService() (*ScrapperService, error) {
+func (f *ServiceFactory) CreateScrapperService(ctx context.Context) (*ScrapperService, error) {
 	linkRepo, err := f.repoFactory.CreateLinkRepository()
 	if err != nil {
 		return nil, err
@@ -65,7 +65,7 @@ func (f *ServiceFactory) CreateScrapperService() (*ScrapperService, error) {
 
 	var digestService *DigestService
 	if f.config.DigestEnabled {
-		digestService, err = f.CreateDigestService(context.Background())
+		digestService, err = f.CreateDigestService(ctx)
 		if err != nil {
 			f.logger.Warn("Не удалось создать сервис дайджестов, продолжаем без него", "error", err)
 		}
