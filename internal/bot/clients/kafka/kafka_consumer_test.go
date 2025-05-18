@@ -37,7 +37,9 @@ func (m *MockMessageHandler) HandleUpdate(_ context.Context, update *models.Link
 	return nil
 }
 
-func prepareTopicConfigs(topics []string) []segkafka.TopicConfig {
+func prepareTopicConfigs(t *testing.T, topics []string) []segkafka.TopicConfig {
+	t.Helper()
+
 	logger := slog.Default().With(slog.String("component", "prepareTopicConfigs"))
 	topicConfigs := make([]segkafka.TopicConfig, 0, len(topics))
 
@@ -54,7 +56,9 @@ func prepareTopicConfigs(topics []string) []segkafka.TopicConfig {
 	return topicConfigs
 }
 
-func handleCreateTopicsError(err error, attempt int) {
+func handleCreateTopicsError(t *testing.T, err error, attempt int) {
+	t.Helper()
+
 	logger := slog.Default().With(slog.String("component", "handleCreateTopicsError"))
 	logger.Warn("Ошибка при вызове CreateTopics", slog.Int("attempt", attempt), slog.Any("error", err),
 		slog.Duration("retry_after", 5*time.Second))
@@ -77,7 +81,9 @@ func handleCreateTopicsError(err error, attempt int) {
 	}
 }
 
-func processTopicErrors(resp *segkafka.CreateTopicsResponse, attempt int) (bool, error) {
+func processTopicErrors(t *testing.T, resp *segkafka.CreateTopicsResponse, attempt int) (bool, error) {
+	t.Helper()
+
 	logger := slog.Default().With(slog.String("component", "processTopicErrors"))
 	allCreatedOrExists := true
 
@@ -105,9 +111,11 @@ func processTopicErrors(resp *segkafka.CreateTopicsResponse, attempt int) (bool,
 	return allCreatedOrExists, lastErr
 }
 
-func createTopicsAdmin(ctx context.Context, brokers []string, topics ...string) error {
+func createTopicsAdmin(ctx context.Context, t *testing.T, brokers []string, topics ...string) error {
+	t.Helper()
+
 	logger := slog.Default().With(slog.String("component", "createTopicsAdmin"))
-	topicConfigs := prepareTopicConfigs(topics)
+	topicConfigs := prepareTopicConfigs(t, topics)
 
 	transport := &segkafka.Transport{
 		DialTimeout: 10 * time.Second,
@@ -147,7 +155,7 @@ func createTopicsAdmin(ctx context.Context, brokers []string, topics ...string) 
 
 		if err != nil {
 			lastErr = err
-			handleCreateTopicsError(err, attempt)
+			handleCreateTopicsError(t, err, attempt)
 			time.Sleep(5 * time.Second)
 
 			attempt++
@@ -155,7 +163,7 @@ func createTopicsAdmin(ctx context.Context, brokers []string, topics ...string) 
 			continue
 		}
 
-		allCreatedOrExists, err := processTopicErrors(resp, attempt)
+		allCreatedOrExists, err := processTopicErrors(t, resp, attempt)
 		if err != nil {
 			lastErr = err
 		}
@@ -259,7 +267,7 @@ func TestKafkaIntegration(t *testing.T) {
 	createCtx, createCancel := context.WithTimeout(ctx, 95*time.Second)
 	defer createCancel()
 
-	err = createTopicsAdmin(createCtx, kafkaBrokers, topicLinkUpdates, topicDeadLetterQueue)
+	err = createTopicsAdmin(createCtx, t, kafkaBrokers, topicLinkUpdates, topicDeadLetterQueue)
 	require.NoError(t, err, "Не удалось создать топики через AdminClient")
 	logger.Info("Топики успешно созданы или уже существовали.")
 
