@@ -3,10 +3,14 @@
 package v1_scrapper
 
 import (
+	"math/bits"
+	"strconv"
+
 	"github.com/go-faster/errors"
 	"github.com/go-faster/jx"
 
 	"github.com/ogen-go/ogen/json"
+	"github.com/ogen-go/ogen/validate"
 )
 
 // Encode implements json.Marshaler.
@@ -799,39 +803,6 @@ func (s *OptURI) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes UpdateNotificationSettingsRequestMode as json.
-func (o OptUpdateNotificationSettingsRequestMode) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	e.Str(string(o.Value))
-}
-
-// Decode decodes UpdateNotificationSettingsRequestMode from json.
-func (o *OptUpdateNotificationSettingsRequestMode) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptUpdateNotificationSettingsRequestMode to nil")
-	}
-	o.Set = true
-	if err := o.Value.Decode(d); err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptUpdateNotificationSettingsRequestMode) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptUpdateNotificationSettingsRequestMode) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
 // Encode implements json.Marshaler.
 func (s *RemoveLinkRequest) Encode(e *jx.Encoder) {
 	e.ObjStart()
@@ -981,10 +952,8 @@ func (s *UpdateNotificationSettingsRequest) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *UpdateNotificationSettingsRequest) encodeFields(e *jx.Encoder) {
 	{
-		if s.Mode.Set {
-			e.FieldStart("mode")
-			s.Mode.Encode(e)
-		}
+		e.FieldStart("mode")
+		s.Mode.Encode(e)
 	}
 	{
 		if s.DigestHour.Set {
@@ -1011,12 +980,13 @@ func (s *UpdateNotificationSettingsRequest) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode UpdateNotificationSettingsRequest to nil")
 	}
+	var requiredBitSet [1]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
 		case "mode":
+			requiredBitSet[0] |= 1 << 0
 			if err := func() error {
-				s.Mode.Reset()
 				if err := s.Mode.Decode(d); err != nil {
 					return err
 				}
@@ -1050,6 +1020,38 @@ func (s *UpdateNotificationSettingsRequest) Decode(d *jx.Decoder) error {
 		return nil
 	}); err != nil {
 		return errors.Wrap(err, "decode UpdateNotificationSettingsRequest")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfUpdateNotificationSettingsRequest) {
+					name = jsonFieldsNameOfUpdateNotificationSettingsRequest[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
 	}
 
 	return nil

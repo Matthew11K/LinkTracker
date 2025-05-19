@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -112,13 +113,14 @@ func (c *Consumer) processMessage(ctx context.Context, msg *kafka.Message) error
 	var linkUpdateMessage LinkUpdateMessage
 
 	if err := json.Unmarshal(msg.Value, &linkUpdateMessage); err != nil {
-		c.logger.Error("Ошибка при десериализации сообщения",
-			"error", err,
-		)
-
 		if sendErr := c.sendToDLQ(ctx, msg.Value, fmt.Sprintf("Ошибка десериализации: %s", err)); sendErr != nil {
-			c.logger.Error("Ошибка при отправке сообщения в DLQ",
+			c.logger.Error("Ошибка при отправке сообщения в DLQ и десериализации",
 				"error", sendErr,
+				"original_error", err,
+			)
+		} else {
+			c.logger.Error("Ошибка при десериализации сообщения",
+				"error", err,
 			)
 		}
 
@@ -127,14 +129,14 @@ func (c *Consumer) processMessage(ctx context.Context, msg *kafka.Message) error
 
 	if linkUpdateMessage.URL == "" {
 		errMsg := "отсутствует обязательное поле URL"
-		c.logger.Error(errMsg)
-
 		newErr := &boterrors.ErrMissingURLInUpdate{}
 
 		if sendErr := c.sendToDLQ(ctx, msg.Value, newErr.Error()); sendErr != nil {
-			c.logger.Error("Ошибка при отправке сообщения в DLQ",
+			c.logger.Error("Ошибка при отправке сообщения в DLQ из-за отсутствия URL",
 				"error", sendErr,
 			)
+		} else {
+			c.logger.Error(errMsg)
 		}
 
 		return newErr
@@ -178,10 +180,6 @@ func (c *Consumer) sendToDLQ(ctx context.Context, message []byte, errMsg string)
 	})
 
 	if err != nil {
-		c.logger.Error("Ошибка при отправке сообщения в DLQ",
-			"error", err,
-		)
-
 		return fmt.Errorf("ошибка при отправке сообщения в DLQ: %w", err)
 	}
 
@@ -191,9 +189,5 @@ func (c *Consumer) sendToDLQ(ctx context.Context, message []byte, errMsg string)
 }
 
 func (c *Consumer) Close() error {
-	if err := c.reader.Close(); err != nil {
-		return err
-	}
-
-	return c.dlqWriter.Close()
+	return errors.Join(c.reader.Close(), c.dlqWriter.Close())
 }

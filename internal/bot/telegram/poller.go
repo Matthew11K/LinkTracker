@@ -74,6 +74,14 @@ func (p *Poller) Stop() {
 	close(p.stopChan)
 }
 
+func (p *Poller) Close() error {
+	p.logger.Info("Остановка Telegram поллера")
+	p.stopped = true
+	close(p.stopChan)
+
+	return nil
+}
+
 func (p *Poller) processUpdate(update *tgbotapi.Update) {
 	if update.Message == nil {
 		return

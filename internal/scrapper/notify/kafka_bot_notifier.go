@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -73,10 +74,6 @@ func (n *KafkaBotNotifier) SendUpdate(ctx context.Context, update *models.LinkUp
 
 	value, err := json.Marshal(message)
 	if err != nil {
-		n.logger.Error("Ошибка при сериализации сообщения",
-			"error", err,
-		)
-
 		return fmt.Errorf("ошибка при сериализации сообщения: %w", err)
 	}
 
@@ -87,10 +84,6 @@ func (n *KafkaBotNotifier) SendUpdate(ctx context.Context, update *models.LinkUp
 	})
 
 	if err != nil {
-		n.logger.Error("Ошибка при отправке сообщения в Kafka",
-			"error", err,
-		)
-
 		return fmt.Errorf("ошибка при отправке сообщения в Kafka: %w", err)
 	}
 
@@ -116,10 +109,6 @@ func (n *KafkaBotNotifier) SendToDLQ(ctx context.Context, message []byte, errMsg
 	})
 
 	if err != nil {
-		n.logger.Error("Ошибка при отправке сообщения в DLQ",
-			"error", err,
-		)
-
 		return fmt.Errorf("ошибка при отправке сообщения в DLQ: %w", err)
 	}
 
@@ -129,9 +118,5 @@ func (n *KafkaBotNotifier) SendToDLQ(ctx context.Context, message []byte, errMsg
 }
 
 func (n *KafkaBotNotifier) Close() error {
-	if err := n.producer.Close(); err != nil {
-		return err
-	}
-
-	return n.dlqProducer.Close()
+	return errors.Join(n.producer.Close(), n.dlqProducer.Close())
 }

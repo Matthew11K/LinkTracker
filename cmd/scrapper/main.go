@@ -34,6 +34,7 @@ type Scheduler interface {
 }
 
 func gracefulShutdown(
+	ctx context.Context,
 	server *http.Server,
 	updateScheduler Scheduler,
 	digestService *service.DigestService,
@@ -49,10 +50,10 @@ func gracefulShutdown(
 		digestService.Stop()
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	if err := server.Shutdown(ctx); err != nil {
+	if err := server.Shutdown(shutdownCtx); err != nil {
 		appLogger.Error("Ошибка при остановке HTTP сервера",
 			"error", err,
 		)
@@ -61,7 +62,7 @@ func gracefulShutdown(
 	appLogger.Info("Сервер успешно остановлен")
 }
 
-func startHTTPServer(server *http.Server, port int, stopCh chan<- struct{}, appLogger *slog.Logger) {
+func startHTTPServer(_ context.Context, server *http.Server, port int, stopCh chan<- struct{}, appLogger *slog.Logger) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
@@ -167,7 +168,7 @@ func run() error {
 	if cfg.DigestEnabled {
 		redisTTL := cfg.RedisCacheTTL
 
-		digestCache, err = cache.NewRedisDigestCache(cfg.RedisURL, cfg.RedisPassword, cfg.RedisDB, redisTTL, appLogger)
+		digestCache, err = cache.NewRedisDigestCache(ctx, cfg.RedisURL, cfg.RedisPassword, cfg.RedisDB, redisTTL, appLogger)
 		if err != nil {
 			appLogger.Error("Ошибка при подключении к Redis для дайджестов",
 				"error", err,
@@ -243,9 +244,9 @@ func run() error {
 
 	stopCh := make(chan struct{})
 
-	startHTTPServer(httpServer, cfg.ScrapperServerPort, stopCh, appLogger)
+	startHTTPServer(ctx, httpServer, cfg.ScrapperServerPort, stopCh, appLogger)
 
-	gracefulShutdown(httpServer, sch, digestService, stopCh, appLogger)
+	gracefulShutdown(ctx, httpServer, sch, digestService, stopCh, appLogger)
 
 	return nil
 }

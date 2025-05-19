@@ -138,6 +138,8 @@ func TestMain(m *testing.M) {
 }
 
 func clearTables(ctx context.Context, t *testing.T) {
+	t.Helper()
+
 	tables := []string{
 		"chat_links",
 		"chat_state_data",
@@ -181,6 +183,8 @@ func clearTables(ctx context.Context, t *testing.T) {
 }
 
 func runTestsForConfig(t *testing.T, accessType config.AccessType) {
+	t.Helper()
+
 	ctx := context.Background()
 	testDB, cleanup, err := setupTestDatabase(ctx)
 	require.NoError(t, err, "Ошибка настройки тестовой базы данных")

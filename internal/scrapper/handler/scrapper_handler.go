@@ -218,17 +218,9 @@ func (h *ScrapperHandler) LinksGet(ctx context.Context, params v1_scrapper.Links
 
 func (h *ScrapperHandler) NotificationSettingsPost(ctx context.Context, req *v1_scrapper.UpdateNotificationSettingsRequest,
 	params v1_scrapper.NotificationSettingsPostParams) (v1_scrapper.NotificationSettingsPostRes, error) {
-	if !req.Mode.IsSet() {
-		errResp := &v1_scrapper.NotificationSettingsPostBadRequest{
-			Description: v1_scrapper.NewOptString("Режим уведомлений не указан"),
-		}
-
-		return errResp, &domainerrors.ErrMissingRequiredField{FieldName: "Mode"}
-	}
-
 	var mode models.NotificationMode
 
-	switch req.Mode.Value {
+	switch req.Mode {
 	case v1_scrapper.UpdateNotificationSettingsRequestModeInstant:
 		mode = models.NotificationModeInstant
 	case v1_scrapper.UpdateNotificationSettingsRequestModeDigest:
@@ -238,7 +230,7 @@ func (h *ScrapperHandler) NotificationSettingsPost(ctx context.Context, req *v1_
 			Description: v1_scrapper.NewOptString("Неизвестный режим уведомлений"),
 		}
 
-		return errResp, &domainerrors.ErrInvalidValue{FieldName: "Mode", Value: string(req.Mode.Value)}
+		return errResp, &domainerrors.ErrInvalidValue{FieldName: "Mode", Value: string(req.Mode)}
 	}
 
 	var digestTime time.Time

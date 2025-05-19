@@ -32,14 +32,14 @@ func TestRedisCache(t *testing.T) {
 		}
 	}()
 
+	ctx := context.Background()
 	redisURL := "localhost:" + redisPort
 	ttl := 30 * time.Second
-	redisCache, err := cache.NewRedisLinkCache(redisURL, "", 0, ttl, logger)
+	redisCache, err := cache.NewRedisLinkCache(ctx, redisURL, "", 0, ttl, logger)
 	require.NoError(t, err)
 
 	defer redisCache.Close()
 
-	ctx := context.Background()
 	chatID := int64(123456789)
 
 	links := []*models.Link{
@@ -99,7 +99,7 @@ func TestRedisCache(t *testing.T) {
 	err = redisCache.SetLinks(ctx, chatID, links)
 	require.NoError(t, err)
 
-	shortTTLCache, err := cache.NewRedisLinkCache(redisURL, "", 0, 1*time.Second, logger)
+	shortTTLCache, err := cache.NewRedisLinkCache(ctx, redisURL, "", 0, 1*time.Second, logger)
 	require.NoError(t, err)
 	defer shortTTLCache.Close()
 
@@ -119,6 +119,8 @@ func TestRedisCache(t *testing.T) {
 }
 
 func startRedisContainer(t *testing.T) (container testcontainers.Container, port string) {
+	t.Helper()
+
 	ctx := context.Background()
 
 	redisC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{

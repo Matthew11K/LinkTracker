@@ -200,11 +200,11 @@ func (c *ScrapperClient) UpdateNotificationSettings(ctx context.Context, chatID 
 	switch mode {
 	case models.NotificationModeInstant:
 		apiMode = v1_scrapper.UpdateNotificationSettingsRequestModeInstant
-		req.Mode = v1_scrapper.NewOptUpdateNotificationSettingsRequestMode(apiMode)
+		req.Mode = apiMode
 	case models.NotificationModeDigest:
 		apiMode = v1_scrapper.UpdateNotificationSettingsRequestModeDigest
 
-		req.Mode = v1_scrapper.NewOptUpdateNotificationSettingsRequestMode(apiMode)
+		req.Mode = apiMode
 		if !digestTime.IsZero() {
 			req.DigestHour = v1_scrapper.NewOptInt32(int32(digestTime.Hour()))     //nolint:gosec // значения часов и минут валидны
 			req.DigestMinute = v1_scrapper.NewOptInt32(int32(digestTime.Minute())) //nolint:gosec // значения часов и минут валидны

@@ -231,6 +231,8 @@ components:
           format: uri
     UpdateNotificationSettingsRequest:
       type: object
+      required:
+        - mode
       properties:
         mode:
           type: string

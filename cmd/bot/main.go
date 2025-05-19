@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -29,33 +30,34 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/pkg/txs"
 )
 
-func gracefulShutdown(server *http.Server, poller *telegram.Poller, kafkaConsumer *kafka.Consumer,
-	redisCache *cache.RedisLinkCache, stopCh <-chan struct{}, appLogger *slog.Logger) {
+const shutdownTimeout = 5 * time.Second
+
+type httpCloser struct {
+	*http.Server
+	ctx context.Context
+}
+
+func newHTTPCloser(ctx context.Context, server *http.Server) httpCloser {
+	return httpCloser{
+		Server: server,
+		ctx:    ctx,
+	}
+}
+
+func (c httpCloser) Close() error {
+	shutdownCtx, cancel := context.WithTimeout(c.ctx, shutdownTimeout)
+	defer cancel()
+
+	return c.Shutdown(shutdownCtx)
+}
+
+func gracefulShutdown(closers []io.Closer, stopCh <-chan struct{}, appLogger *slog.Logger) {
 	<-stopCh
 	appLogger.Info("Получен сигнал завершения")
 
-	poller.Stop()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := server.Shutdown(ctx); err != nil {
-		appLogger.Error("Ошибка при остановке HTTP сервера",
-			"error", err,
-		)
-	}
-
-	if kafkaConsumer != nil {
-		if err := kafkaConsumer.Close(); err != nil {
-			appLogger.Error("Ошибка при закрытии Kafka консьюмера",
-				"error", err,
-			)
-		}
-	}
-
-	if redisCache != nil {
-		if err := redisCache.Close(); err != nil {
-			appLogger.Error("Ошибка при закрытии соединения с Redis",
+	for _, c := range closers {
+		if err := c.Close(); err != nil {
+			appLogger.Error("Ошибка при закрытии ресурса",
 				"error", err,
 			)
 		}
@@ -85,7 +87,7 @@ func setupTelegramCommands(telegramClient domain.TelegramClientAPI, appLogger *s
 	}
 }
 
-func startHTTPServer(server *http.Server, port int, stopCh chan<- struct{}, appLogger *slog.Logger) {
+func startHTTPServer(_ context.Context, server *http.Server, port int, stopCh chan<- struct{}, appLogger *slog.Logger) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
@@ -189,7 +191,7 @@ func run() error {
 			cacheTTL = 30 * time.Minute
 		}
 
-		redisCache, err = cache.NewRedisLinkCache(cfg.RedisURL, cfg.RedisPassword, cfg.RedisDB, cacheTTL, appLogger)
+		redisCache, err = cache.NewRedisLinkCache(ctx, cfg.RedisURL, cfg.RedisPassword, cfg.RedisDB, cacheTTL, appLogger)
 		if err != nil {
 			appLogger.Error("Ошибка при подключении к Redis",
 				"error", err,
@@ -242,8 +244,21 @@ func run() error {
 
 	stopCh := make(chan struct{})
 
-	startHTTPServer(httpServer, cfg.BotServerPort, stopCh, appLogger)
-	gracefulShutdown(httpServer, poller, kafkaConsumer, redisCache, stopCh, appLogger)
+	closers := []io.Closer{
+		poller,
+		newHTTPCloser(ctx, httpServer), // попытался использовать пример с оберткой для shutdown с таймаутом и передать в него контекст
+	}
+
+	if kafkaConsumer != nil {
+		closers = append(closers, kafkaConsumer)
+	}
+
+	if redisCache != nil {
+		closers = append(closers, redisCache)
+	}
+
+	startHTTPServer(ctx, httpServer, cfg.BotServerPort, stopCh, appLogger)
+	gracefulShutdown(closers, stopCh, appLogger)
 
 	return nil
 }

@@ -107,7 +107,6 @@ func (s *ApiErrorResponse) SetStacktrace(val []string) {
 func (*ApiErrorResponse) linksGetRes()     {}
 func (*ApiErrorResponse) linksPostRes()    {}
 func (*ApiErrorResponse) tgChatIDPostRes() {}
-func (*ApiErrorResponse) notificationSettingsPostRes() {}
 
 // Ref: #/components/schemas/LinkResponse
 type LinkResponse struct {
@@ -393,52 +392,6 @@ func (o OptURI) Or(d url.URL) url.URL {
 	return d
 }
 
-// NewOptUpdateNotificationSettingsRequestMode returns new OptUpdateNotificationSettingsRequestMode with value set to v.
-func NewOptUpdateNotificationSettingsRequestMode(v UpdateNotificationSettingsRequestMode) OptUpdateNotificationSettingsRequestMode {
-	return OptUpdateNotificationSettingsRequestMode{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptUpdateNotificationSettingsRequestMode is optional UpdateNotificationSettingsRequestMode.
-type OptUpdateNotificationSettingsRequestMode struct {
-	Value UpdateNotificationSettingsRequestMode
-	Set   bool
-}
-
-// IsSet returns true if OptUpdateNotificationSettingsRequestMode was set.
-func (o OptUpdateNotificationSettingsRequestMode) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptUpdateNotificationSettingsRequestMode) Reset() {
-	var v UpdateNotificationSettingsRequestMode
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptUpdateNotificationSettingsRequestMode) SetTo(v UpdateNotificationSettingsRequestMode) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptUpdateNotificationSettingsRequestMode) Get() (v UpdateNotificationSettingsRequestMode, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptUpdateNotificationSettingsRequestMode) Or(d UpdateNotificationSettingsRequestMode) UpdateNotificationSettingsRequestMode {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // Ref: #/components/schemas/RemoveLinkRequest
 type RemoveLinkRequest struct {
 	Link OptURI `json:"link"`
@@ -475,7 +428,7 @@ func (*TgChatIDPostOK) tgChatIDPostRes() {}
 // Ref: #/components/schemas/UpdateNotificationSettingsRequest
 type UpdateNotificationSettingsRequest struct {
 	// Режим уведомлений: instant или digest.
-	Mode OptUpdateNotificationSettingsRequestMode `json:"mode"`
+	Mode UpdateNotificationSettingsRequestMode `json:"mode"`
 	// Час доставки дайджеста (0-23).
 	DigestHour OptInt32 `json:"digestHour"`
 	// Минута доставки дайджеста (0-59).
@@ -483,7 +436,7 @@ type UpdateNotificationSettingsRequest struct {
 }
 
 // GetMode returns the value of Mode.
-func (s *UpdateNotificationSettingsRequest) GetMode() OptUpdateNotificationSettingsRequestMode {
+func (s *UpdateNotificationSettingsRequest) GetMode() UpdateNotificationSettingsRequestMode {
 	return s.Mode
 }
 
@@ -498,7 +451,7 @@ func (s *UpdateNotificationSettingsRequest) GetDigestMinute() OptInt32 {
 }
 
 // SetMode sets the value of Mode.
-func (s *UpdateNotificationSettingsRequest) SetMode(val OptUpdateNotificationSettingsRequestMode) {
+func (s *UpdateNotificationSettingsRequest) SetMode(val UpdateNotificationSettingsRequestMode) {
 	s.Mode = val
 }
 

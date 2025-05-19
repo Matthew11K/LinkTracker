@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"log/slog"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/common"
@@ -39,7 +40,7 @@ func NewServiceFactory(
 	}
 }
 
-func (f *ServiceFactory) CreateScrapperService() (*ScrapperService, error) {
+func (f *ServiceFactory) CreateScrapperService(ctx context.Context) (*ScrapperService, error) {
 	linkRepo, err := f.repoFactory.CreateLinkRepository()
 	if err != nil {
 		return nil, err
@@ -64,7 +65,7 @@ func (f *ServiceFactory) CreateScrapperService() (*ScrapperService, error) {
 
 	var digestService *DigestService
 	if f.config.DigestEnabled {
-		digestService, err = f.CreateDigestService()
+		digestService, err = f.CreateDigestService(ctx)
 		if err != nil {
 			f.logger.Warn("Не удалось создать сервис дайджестов, продолжаем без него", "error", err)
 		}
@@ -83,7 +84,7 @@ func (f *ServiceFactory) CreateScrapperService() (*ScrapperService, error) {
 	), nil
 }
 
-func (f *ServiceFactory) CreateDigestService() (*DigestService, error) {
+func (f *ServiceFactory) CreateDigestService(ctx context.Context) (*DigestService, error) {
 	if !f.config.DigestEnabled {
 		return nil, nil
 	}
@@ -101,6 +102,7 @@ func (f *ServiceFactory) CreateDigestService() (*DigestService, error) {
 	}
 
 	redisCache, err := cache.NewRedisDigestCache(
+		ctx,
 		f.config.RedisURL,
 		f.config.RedisPassword,
 		f.config.RedisDB,
