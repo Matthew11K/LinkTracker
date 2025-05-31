@@ -44,6 +44,25 @@ type Config struct {
 	DigestEnabled      bool   `mapstructure:"DIGEST_ENABLED"`
 	DigestDeliveryTime string `mapstructure:"DIGEST_DELIVERY_TIME"`
 	NotificationMode   string `mapstructure:"NOTIFICATION_MODE"`
+
+	HTTPRequestTimeout     time.Duration `mapstructure:"HTTP_REQUEST_TIMEOUT"`
+	ExternalRequestTimeout time.Duration `mapstructure:"EXTERNAL_REQUEST_TIMEOUT"`
+
+	RateLimitRequests int           `mapstructure:"RATE_LIMIT_REQUESTS"`
+	RateLimitWindow   time.Duration `mapstructure:"RATE_LIMIT_WINDOW"`
+
+	RetryCount           int           `mapstructure:"RETRY_COUNT"`
+	RetryBackoff         time.Duration `mapstructure:"RETRY_BACKOFF"`
+	RetryableStatusCodes []int         `mapstructure:"RETRYABLE_STATUS_CODES"`
+
+	CBSlidingWindowSize        int           `mapstructure:"CB_SLIDING_WINDOW_SIZE"`
+	CBMinimumRequiredCalls     int           `mapstructure:"CB_MINIMUM_REQUIRED_CALLS"`
+	CBFailureRateThreshold     int           `mapstructure:"CB_FAILURE_RATE_THRESHOLD"`
+	CBPermittedCallsInHalfOpen int           `mapstructure:"CB_PERMITTED_CALLS_IN_HALF_OPEN"`
+	CBWaitDurationInOpenState  time.Duration `mapstructure:"CB_WAIT_DURATION_IN_OPEN_STATE"`
+
+	FallbackEnabled   bool   `mapstructure:"FALLBACK_ENABLED"`
+	FallbackTransport string `mapstructure:"FALLBACK_TRANSPORT"`
 }
 
 func LoadConfig() *Config {
@@ -94,6 +113,25 @@ func setDefaults() {
 	viper.SetDefault("DIGEST_ENABLED", false)
 	viper.SetDefault("DIGEST_DELIVERY_TIME", "10:00")
 	viper.SetDefault("NOTIFICATION_MODE", "instant")
+
+	viper.SetDefault("HTTP_REQUEST_TIMEOUT", "5s")
+	viper.SetDefault("EXTERNAL_REQUEST_TIMEOUT", "10s")
+
+	viper.SetDefault("RATE_LIMIT_REQUESTS", 100)
+	viper.SetDefault("RATE_LIMIT_WINDOW", "1m")
+
+	viper.SetDefault("RETRY_COUNT", 3)
+	viper.SetDefault("RETRY_BACKOFF", "1s")
+	viper.SetDefault("RETRYABLE_STATUS_CODES", []int{408, 429, 500, 502, 503, 504})
+
+	viper.SetDefault("CB_SLIDING_WINDOW_SIZE", 10)
+	viper.SetDefault("CB_MINIMUM_REQUIRED_CALLS", 5)
+	viper.SetDefault("CB_FAILURE_RATE_THRESHOLD", 50)
+	viper.SetDefault("CB_PERMITTED_CALLS_IN_HALF_OPEN", 2)
+	viper.SetDefault("CB_WAIT_DURATION_IN_OPEN_STATE", "10s")
+
+	viper.SetDefault("FALLBACK_ENABLED", true)
+	viper.SetDefault("FALLBACK_TRANSPORT", "Kafka") // HTTP -> Kafka
 }
 
 func getDefaultConfig() *Config {
@@ -123,5 +161,24 @@ func getDefaultConfig() *Config {
 		DigestEnabled:      false,
 		DigestDeliveryTime: "10:00",
 		NotificationMode:   "instant",
+
+		HTTPRequestTimeout:     5 * time.Second,
+		ExternalRequestTimeout: 10 * time.Second,
+
+		RateLimitRequests: 100,
+		RateLimitWindow:   1 * time.Minute,
+
+		RetryCount:           3,
+		RetryBackoff:         1 * time.Second,
+		RetryableStatusCodes: []int{408, 429, 500, 502, 503, 504},
+
+		CBSlidingWindowSize:        10,
+		CBMinimumRequiredCalls:     5,
+		CBFailureRateThreshold:     50,
+		CBPermittedCallsInHalfOpen: 2,
+		CBWaitDurationInOpenState:  10 * time.Second,
+
+		FallbackEnabled:   true,
+		FallbackTransport: "Kafka",
 	}
 }

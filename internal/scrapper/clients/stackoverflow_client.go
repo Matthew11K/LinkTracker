@@ -3,8 +3,11 @@ package clients
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
+	"github.com/central-university-dev/go-Matthew11K/internal/common/httputil"
+	"github.com/central-university-dev/go-Matthew11K/internal/config"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 	"github.com/go-resty/resty/v2"
 )
@@ -13,6 +16,7 @@ type StackOverflowClient struct {
 	client  *resty.Client
 	baseURL string
 	key     string
+	logger  *slog.Logger
 }
 
 type QuestionUpdateGetter interface {
@@ -20,18 +24,18 @@ type QuestionUpdateGetter interface {
 	GetQuestionDetails(ctx context.Context, questionID int64) (*models.ContentDetails, error)
 }
 
-func NewStackOverflowClient(key, baseURL string) QuestionUpdateGetter {
+func NewStackOverflowClient(key, baseURL string, cfg *config.Config, logger *slog.Logger) QuestionUpdateGetter {
 	if baseURL == "" {
 		baseURL = "https://api.stackexchange.com/2.3"
 	}
 
-	client := resty.New()
-	client.SetTimeout(10 * time.Second)
+	client := httputil.CreateResilientHTTPClient(cfg, logger, "stackoverflow")
 
 	return &StackOverflowClient{
 		client:  client,
 		baseURL: baseURL,
 		key:     key,
+		logger:  logger,
 	}
 }
 

@@ -24,6 +24,7 @@ import (
 	botservice "github.com/central-university-dev/go-Matthew11K/internal/bot/service"
 	"github.com/central-university-dev/go-Matthew11K/internal/bot/telegram"
 	commonservice "github.com/central-university-dev/go-Matthew11K/internal/common"
+	"github.com/central-university-dev/go-Matthew11K/internal/common/middleware"
 	"github.com/central-university-dev/go-Matthew11K/internal/config"
 	"github.com/central-university-dev/go-Matthew11K/internal/database"
 	"github.com/central-university-dev/go-Matthew11K/pkg"
@@ -152,7 +153,7 @@ func run() error {
 		return fmt.Errorf("ошибка создания репозитория состояний чата: %w", err)
 	}
 
-	scrapperClient, err := clients.NewScrapperClient(cfg.ScrapperBaseURL)
+	scrapperClient, err := clients.NewScrapperClient(cfg.ScrapperBaseURL, appLogger)
 	if err != nil {
 		appLogger.Error("Ошибка при создании клиента скраппера",
 			"error", err,
@@ -233,12 +234,20 @@ func run() error {
 		return fmt.Errorf("ошибка создания сервера: %w", err)
 	}
 
+	rateLimiter := middleware.NewRateLimiterMiddleware(
+		cfg.RateLimitRequests,
+		cfg.RateLimitWindow,
+		appLogger,
+	)
+
+	serverWithMiddleware := rateLimiter.Middleware(server)
+
 	poller := telegram.NewPoller(telegramClient, botService, appLogger)
 	go poller.Start()
 
 	httpServer := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.BotServerPort),
-		Handler:           server,
+		Handler:           serverWithMiddleware,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -246,7 +255,8 @@ func run() error {
 
 	closers := []io.Closer{
 		poller,
-		newHTTPCloser(ctx, httpServer), // попытался использовать пример с оберткой для shutdown с таймаутом и передать в него контекст
+		newHTTPCloser(ctx, httpServer),
+		rateLimiter,
 	}
 
 	if kafkaConsumer != nil {

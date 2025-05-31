@@ -3,8 +3,11 @@ package clients
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
+	"github.com/central-university-dev/go-Matthew11K/internal/common/httputil"
+	"github.com/central-university-dev/go-Matthew11K/internal/config"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 	"github.com/go-resty/resty/v2"
 )
@@ -13,6 +16,7 @@ type GitHubClient struct {
 	client  *resty.Client
 	token   string
 	baseURL string
+	logger  *slog.Logger
 }
 
 type RepositoryUpdateGetter interface {
@@ -20,18 +24,18 @@ type RepositoryUpdateGetter interface {
 	GetRepositoryDetails(ctx context.Context, owner, repo string) (*models.ContentDetails, error)
 }
 
-func NewGitHubClient(token, baseURL string) RepositoryUpdateGetter {
+func NewGitHubClient(token, baseURL string, cfg *config.Config, logger *slog.Logger) RepositoryUpdateGetter {
 	if baseURL == "" {
 		baseURL = "https://api.github.com"
 	}
 
-	client := resty.New()
-	client.SetTimeout(10 * time.Second)
+	client := httputil.CreateResilientHTTPClient(cfg, logger, "github")
 
 	return &GitHubClient{
 		client:  client,
 		token:   token,
 		baseURL: baseURL,
+		logger:  logger,
 	}
 }
 

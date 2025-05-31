@@ -14,6 +14,7 @@ import (
 
 	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1_scrapper"
 	"github.com/central-university-dev/go-Matthew11K/internal/common"
+	"github.com/central-university-dev/go-Matthew11K/internal/common/middleware"
 	"github.com/central-university-dev/go-Matthew11K/internal/config"
 	"github.com/central-university-dev/go-Matthew11K/internal/database"
 	"github.com/central-university-dev/go-Matthew11K/internal/scrapper/cache"
@@ -27,7 +28,6 @@ import (
 	"github.com/central-university-dev/go-Matthew11K/pkg/txs"
 )
 
-// Scheduler интерфейс планировщика.
 type Scheduler interface {
 	Start()
 	Stop()
@@ -146,13 +146,15 @@ func run() error {
 	}
 
 	updaterFactory := common.NewLinkUpdaterFactory(
-		clients.NewGitHubClient(cfg.GitHubAPIToken, ""),
-		clients.NewStackOverflowClient(cfg.StackOverflowAPIToken, ""),
+		clients.NewGitHubClient(cfg.GitHubAPIToken, "", cfg, appLogger),
+		clients.NewStackOverflowClient(cfg.StackOverflowAPIToken, "", cfg, appLogger),
 	)
 
 	linkAnalyzer := common.NewLinkAnalyzer()
 
-	botNotifier, err := notify.NewHTTPBotNotifier(cfg.BotBaseURL, appLogger)
+	notifierFactory := notify.NewNotifierFactory(cfg, appLogger)
+
+	botNotifier, err := notifierFactory.CreateNotifier()
 	if err != nil {
 		appLogger.Error("Ошибка при создании нотификатора бота",
 			"error", err,
@@ -209,6 +211,14 @@ func run() error {
 		return err
 	}
 
+	rateLimiter := middleware.NewRateLimiterMiddleware(
+		cfg.RateLimitRequests,
+		cfg.RateLimitWindow,
+		appLogger,
+	)
+
+	serverWithMiddleware := rateLimiter.Middleware(server)
+
 	var sch interface {
 		Start()
 		Stop()
@@ -229,8 +239,6 @@ func run() error {
 			appLogger,
 		)
 	} else {
-		appLogger.Error("Обычный шедулер больше не поддерживается в текущей конфигурации")
-
 		return fmt.Errorf("обычный шедулер больше не поддерживается в текущей конфигурации")
 	}
 
@@ -238,7 +246,7 @@ func run() error {
 
 	httpServer := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.ScrapperServerPort),
-		Handler:           server,
+		Handler:           serverWithMiddleware,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

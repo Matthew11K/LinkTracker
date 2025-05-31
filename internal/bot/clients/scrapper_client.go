@@ -3,6 +3,7 @@ package clients
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"time"
 
@@ -15,7 +16,7 @@ type ScrapperClient struct {
 	client *v1_scrapper.Client
 }
 
-func NewScrapperClient(baseURL string) (*ScrapperClient, error) {
+func NewScrapperClient(baseURL string, _ *slog.Logger) (*ScrapperClient, error) {
 	if baseURL == "" {
 		baseURL = "http://link_tracker_scrapper:8081"
 	}
