@@ -82,7 +82,7 @@ func (f *NotifierFactory) createFallbackNotifier(primaryType NotifierType) (BotN
 func (f *NotifierFactory) createSingleNotifier(notifierType NotifierType) (BotNotifier, error) {
 	switch notifierType {
 	case HTTPNotifier:
-		return NewHTTPBotNotifier(f.config.BotBaseURL, f.logger)
+		return NewHTTPBotNotifier(f.config.BotBaseURL, f.config, f.logger)
 	case KafkaNotifier:
 		brokers := strings.Split(f.config.KafkaBrokers, ",")
 		return NewKafkaBotNotifier(brokers, f.config.TopicLinkUpdates, f.config.TopicDeadLetterQueue, f.logger), nil

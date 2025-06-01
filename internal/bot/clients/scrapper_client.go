@@ -8,6 +8,8 @@ import (
 	"time"
 
 	v1_scrapper "github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1_scrapper"
+	"github.com/central-university-dev/go-Matthew11K/internal/common/httputil"
+	"github.com/central-university-dev/go-Matthew11K/internal/config"
 	domainerrors "github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 )
@@ -16,12 +18,14 @@ type ScrapperClient struct {
 	client *v1_scrapper.Client
 }
 
-func NewScrapperClient(baseURL string, _ *slog.Logger) (*ScrapperClient, error) {
+func NewScrapperClient(baseURL string, cfg *config.Config, logger *slog.Logger) (*ScrapperClient, error) {
 	if baseURL == "" {
 		baseURL = "http://link_tracker_scrapper:8081"
 	}
 
-	client, err := v1_scrapper.NewClient(baseURL)
+	resilientClient := httputil.CreateResilientOpenAPIClient(cfg, logger, "scrapper_service")
+
+	client, err := v1_scrapper.NewClient(baseURL, v1_scrapper.WithClient(resilientClient))
 	if err != nil {
 		return nil, fmt.Errorf("ошибка при создании клиента скраппера: %w", err)
 	}

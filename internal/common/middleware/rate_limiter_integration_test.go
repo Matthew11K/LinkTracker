@@ -208,7 +208,7 @@ func initializeTestApplication(ctx context.Context, t *testing.T, cfg *config.Co
 		return nil, fmt.Errorf("ошибка создания репозитория состояний чата: %w", err)
 	}
 
-	scrapperClient, err := clients.NewScrapperClient(cfg.ScrapperBaseURL, logger)
+	scrapperClient, err := clients.NewScrapperClient(cfg.ScrapperBaseURL, cfg, logger)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка создания клиента скраппера: %w", err)
 	}

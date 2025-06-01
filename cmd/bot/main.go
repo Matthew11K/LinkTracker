@@ -153,7 +153,7 @@ func run() error {
 		return fmt.Errorf("ошибка создания репозитория состояний чата: %w", err)
 	}
 
-	scrapperClient, err := clients.NewScrapperClient(cfg.ScrapperBaseURL, appLogger)
+	scrapperClient, err := clients.NewScrapperClient(cfg.ScrapperBaseURL, cfg, appLogger)
 	if err != nil {
 		appLogger.Error("Ошибка при создании клиента скраппера",
 			"error", err,
