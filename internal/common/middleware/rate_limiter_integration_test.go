@@ -45,6 +45,7 @@ func TestRateLimiterRealIntegration(t *testing.T) {
 		t.Skip("Пропуск интеграционного теста (используйте -short=false)")
 	}
 
+	// Arrange
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
@@ -129,6 +130,7 @@ func TestRateLimiterRealIntegration(t *testing.T) {
 	testEndpoint := serverURL + "/updates"
 	client := &http.Client{Timeout: 30 * time.Second}
 
+	// Act & Assert - первый запрос должен пройти
 	logger.Info("Выполнение первого запроса (должен пройти)")
 
 	resp, err := makeRealTestRequest(client, testEndpoint)
@@ -137,6 +139,7 @@ func TestRateLimiterRealIntegration(t *testing.T) {
 		"Первый запрос должен проходить")
 	resp.Body.Close()
 
+	// Act & Assert - второй запрос должен пройти
 	logger.Info("Выполнение второго запроса (должен пройти)")
 
 	resp, err = makeRealTestRequest(client, testEndpoint)
@@ -145,6 +148,7 @@ func TestRateLimiterRealIntegration(t *testing.T) {
 		"Второй запрос должен проходить")
 	resp.Body.Close()
 
+	// Act & Assert - третий запрос должен быть заблокирован
 	logger.Info("Выполнение третьего запроса (должен быть заблокирован)")
 
 	resp, err = makeRealTestRequest(client, testEndpoint)
@@ -161,6 +165,7 @@ func TestRateLimiterRealIntegration(t *testing.T) {
 		"Retry-After должен быть в разумных пределах (1-2 сек)")
 	resp.Body.Close()
 
+	// Act & Assert - после паузы запрос должен пройти
 	time.Sleep(time.Second + 200*time.Millisecond)
 
 	resp, err = makeRealTestRequest(client, testEndpoint)
@@ -264,14 +269,11 @@ func initializeTestApplication(ctx context.Context, t *testing.T, cfg *config.Co
 	}
 
 	rateLimiter := middleware.NewRateLimiterMiddleware(
+		ctx,
 		cfg.RateLimitRequests,
 		cfg.RateLimitWindow,
 		logger,
 	)
-
-	closers = append(closers, func() error {
-		return rateLimiter.Close()
-	})
 
 	handler := rateLimiter.Middleware(server)
 

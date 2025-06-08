@@ -27,18 +27,14 @@ func CreateResilientHTTPClient(cfg *config.Config, logger *slog.Logger, serviceN
 	client.SetRetryWaitTime(cfg.RetryBackoff)
 	client.SetRetryMaxWaitTime(cfg.RetryBackoff * 5)
 
+	retryableStatusCodes := NewIntSet(cfg.RetryableStatusCodes)
+
 	client.AddRetryCondition(func(r *resty.Response, err error) bool {
 		if err != nil {
 			return true
 		}
 
-		for _, status := range cfg.RetryableStatusCodes {
-			if r.StatusCode() == status {
-				return true
-			}
-		}
-
-		return false
+		return retryableStatusCodes.Has(r.StatusCode())
 	})
 
 	circuitBreakerSettings := gobreaker.Settings{
@@ -119,4 +115,24 @@ func (t *CircuitBreakerTransport) RoundTrip(req *http.Request) (*http.Response, 
 	}
 
 	return result.(*http.Response), nil
+}
+
+type IntSet struct {
+	values map[int]struct{}
+}
+
+func NewIntSet(values []int) *IntSet {
+	set := &IntSet{
+		values: make(map[int]struct{}, len(values)),
+	}
+	for _, v := range values {
+		set.values[v] = struct{}{}
+	}
+
+	return set
+}
+
+func (s *IntSet) Has(value int) bool {
+	_, exists := s.values[value]
+	return exists
 }

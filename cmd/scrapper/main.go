@@ -212,6 +212,7 @@ func run() error {
 	}
 
 	rateLimiter := middleware.NewRateLimiterMiddleware(
+		ctx,
 		cfg.RateLimitRequests,
 		cfg.RateLimitWindow,
 		appLogger,

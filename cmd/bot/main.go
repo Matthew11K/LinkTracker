@@ -235,6 +235,7 @@ func run() error {
 	}
 
 	rateLimiter := middleware.NewRateLimiterMiddleware(
+		ctx,
 		cfg.RateLimitRequests,
 		cfg.RateLimitWindow,
 		appLogger,
@@ -256,7 +257,6 @@ func run() error {
 	closers := []io.Closer{
 		poller,
 		newHTTPCloser(ctx, httpServer),
-		rateLimiter,
 	}
 
 	if kafkaConsumer != nil {

@@ -16,6 +16,7 @@ import (
 )
 
 func TestFallbackBotNotifier_PrimarySuccess(t *testing.T) {
+	// Arrange
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	primaryMock := mocks.NewBotNotifier(t)
@@ -31,14 +32,17 @@ func TestFallbackBotNotifier_PrimarySuccess(t *testing.T) {
 
 	primaryMock.On("SendUpdate", mock.Anything, update).Return(nil)
 
+	// Act
 	err := fallbackNotifier.SendUpdate(context.Background(), update)
 
+	// Assert
 	require.NoError(t, err)
 	primaryMock.AssertExpectations(t)
 	secondaryMock.AssertNotCalled(t, "SendUpdate")
 }
 
 func TestFallbackBotNotifier_PrimaryFailsSecondarySuccess(t *testing.T) {
+	// Arrange
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	primaryMock := mocks.NewBotNotifier(t)
@@ -57,14 +61,17 @@ func TestFallbackBotNotifier_PrimaryFailsSecondarySuccess(t *testing.T) {
 	primaryMock.On("SendUpdate", mock.Anything, update).Return(primaryError)
 	secondaryMock.On("SendUpdate", mock.Anything, update).Return(nil)
 
+	// Act
 	err := fallbackNotifier.SendUpdate(context.Background(), update)
 
+	// Assert
 	require.NoError(t, err)
 	primaryMock.AssertExpectations(t)
 	secondaryMock.AssertExpectations(t)
 }
 
 func TestFallbackBotNotifier_BothFail(t *testing.T) {
+	// Arrange
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	primaryMock := mocks.NewBotNotifier(t)
@@ -84,8 +91,10 @@ func TestFallbackBotNotifier_BothFail(t *testing.T) {
 	primaryMock.On("SendUpdate", mock.Anything, update).Return(primaryError)
 	secondaryMock.On("SendUpdate", mock.Anything, update).Return(secondaryError)
 
+	// Act
 	err := fallbackNotifier.SendUpdate(context.Background(), update)
 
+	// Assert
 	require.Error(t, err)
 	assert.Equal(t, primaryError, err)
 	primaryMock.AssertExpectations(t)

@@ -16,8 +16,8 @@ import (
 )
 
 func TestCircuitBreaker_FastFailure(t *testing.T) {
+	// Arrange
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-
 	requestCount := 0
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -41,18 +41,20 @@ func TestCircuitBreaker_FastFailure(t *testing.T) {
 
 	client := httputil.CreateResilientHTTPClient(cfg, logger, "test_service")
 
+	// Act - открываем circuit breaker первым неудачным запросом
 	_, err := client.R().Get(server.URL + "/test")
 	require.Error(t, err)
 
 	initialRequestCount := requestCount
 
+	// Act - делаем второй запрос, который должен быть быстро отклонен
 	start := time.Now()
 	_, err = client.R().Get(server.URL + "/test")
 	duration := time.Since(start)
 
+	// Assert
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circuit breaker is open", "Ошибка должна указывать на открытый circuit breaker")
-
 	assert.Less(t, duration, 200*time.Millisecond, "Circuit breaker должен отвечать быстро")
 
 	finalRequestCount := requestCount
@@ -61,8 +63,8 @@ func TestCircuitBreaker_FastFailure(t *testing.T) {
 }
 
 func TestRetryWithBackoff(t *testing.T) {
+	// Arrange
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-
 	requestCount := 0
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -90,16 +92,18 @@ func TestRetryWithBackoff(t *testing.T) {
 
 	client := httputil.CreateResilientHTTPClient(cfg, logger, "test_service")
 
+	// Act
 	resp, err := client.R().Get(server.URL + "/test")
 
+	// Assert
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode())
 	assert.Equal(t, 3, requestCount, "Должно быть 3 запроса: 2 неудачных + 1 успешный")
 }
 
 func TestNonRetryableStatus(t *testing.T) {
+	// Arrange
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-
 	requestCount := 0
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -123,14 +127,17 @@ func TestNonRetryableStatus(t *testing.T) {
 
 	client := httputil.CreateResilientHTTPClient(cfg, logger, "test_service")
 
+	// Act
 	resp, err := client.R().Get(server.URL + "/test")
 
+	// Assert
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode())
 	assert.Equal(t, 1, requestCount, "Должен быть только 1 запрос, retry не должен произойти")
 }
 
 func TestRetryStatefulBehavior(t *testing.T) {
+	// Arrange
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	var state int32
@@ -169,8 +176,10 @@ func TestRetryStatefulBehavior(t *testing.T) {
 
 	client := httputil.CreateResilientHTTPClient(cfg, logger, "stateful_test")
 
+	// Act
 	resp, err := client.R().Get(server.URL + "/api/test")
 
+	// Assert
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode())
 	assert.Contains(t, string(resp.Body()), "success")
@@ -180,6 +189,7 @@ func TestRetryStatefulBehavior(t *testing.T) {
 }
 
 func TestRetryNonRetryableStatusStateful(t *testing.T) {
+	// Arrange
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	var requestCount int32
@@ -205,8 +215,10 @@ func TestRetryNonRetryableStatusStateful(t *testing.T) {
 
 	client := httputil.CreateResilientHTTPClient(cfg, logger, "non_retryable_test")
 
+	// Act
 	resp, err := client.R().Get(server.URL + "/api/protected")
 
+	// Assert
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode())
 	assert.Contains(t, string(resp.Body()), "unauthorized")
@@ -216,13 +228,13 @@ func TestRetryNonRetryableStatusStateful(t *testing.T) {
 }
 
 func TestCircuitBreakerWithDelayedResponse(t *testing.T) {
+	// Arrange
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	var requestCount int32
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		atomic.AddInt32(&requestCount, 1)
-
 		time.Sleep(500 * time.Millisecond)
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -242,16 +254,19 @@ func TestCircuitBreakerWithDelayedResponse(t *testing.T) {
 
 	client := httputil.CreateResilientHTTPClient(cfg, logger, "delay_test")
 
+	// Act - открываем circuit breaker первым медленным запросом
 	start := time.Now()
 	_, err := client.R().Get(server.URL + "/slow")
 	firstDuration := time.Since(start)
 
 	require.Error(t, err)
 
+	// Act - делаем второй запрос, который должен быть быстро отклонен
 	start = time.Now()
 	_, err = client.R().Get(server.URL + "/slow")
 	secondDuration := time.Since(start)
 
+	// Assert
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circuit breaker is open")
 

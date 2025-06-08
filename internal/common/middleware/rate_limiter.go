@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net"
@@ -24,10 +25,15 @@ type RateLimiterMiddleware struct {
 	expiration time.Duration
 	logger     *slog.Logger
 
-	cleanup chan struct{}
+	ctx context.Context
 }
 
-func NewRateLimiterMiddleware(requestsPerSecond int, window time.Duration, logger *slog.Logger) *RateLimiterMiddleware {
+func NewRateLimiterMiddleware(
+	ctx context.Context,
+	requestsPerSecond int,
+	window time.Duration,
+	logger *slog.Logger,
+) *RateLimiterMiddleware {
 	r := rate.Limit(float64(requestsPerSecond) / window.Seconds())
 
 	m := &RateLimiterMiddleware{
@@ -36,7 +42,7 @@ func NewRateLimiterMiddleware(requestsPerSecond int, window time.Duration, logge
 		burst:      requestsPerSecond,
 		expiration: 1 * time.Hour,
 		logger:     logger,
-		cleanup:    make(chan struct{}),
+		ctx:        ctx,
 	}
 
 	go m.cleanupClients()
@@ -76,15 +82,10 @@ func (m *RateLimiterMiddleware) cleanupClients() {
 				}
 			}
 			m.mu.Unlock()
-		case <-m.cleanup:
+		case <-m.ctx.Done():
 			return
 		}
 	}
-}
-
-func (m *RateLimiterMiddleware) Close() error {
-	close(m.cleanup)
-	return nil
 }
 
 func (m *RateLimiterMiddleware) Middleware(next http.Handler) http.Handler {
