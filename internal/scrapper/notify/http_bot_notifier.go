@@ -7,6 +7,8 @@ import (
 	"net/url"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1_bot"
+	"github.com/central-university-dev/go-Matthew11K/internal/common/httputil"
+	"github.com/central-university-dev/go-Matthew11K/internal/config"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
 )
 
@@ -15,12 +17,14 @@ type HTTPBotNotifier struct {
 	logger *slog.Logger
 }
 
-func NewHTTPBotNotifier(baseURL string, logger *slog.Logger) (*HTTPBotNotifier, error) {
+func NewHTTPBotNotifier(baseURL string, cfg *config.Config, logger *slog.Logger) (*HTTPBotNotifier, error) {
 	if baseURL == "" {
 		baseURL = "http://link_tracker_bot:8080"
 	}
 
-	client, err := v1_bot.NewClient(baseURL)
+	resilientClient := httputil.CreateResilientOpenAPIClient(cfg, logger, "bot_service")
+
+	client, err := v1_bot.NewClient(baseURL, v1_bot.WithClient(resilientClient))
 	if err != nil {
 		return nil, fmt.Errorf("ошибка при создании клиента бота: %w", err)
 	}

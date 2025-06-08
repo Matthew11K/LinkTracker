@@ -267,3 +267,11 @@ func (e *ErrMissingURLInUpdate) Is(target error) bool {
 	_, ok := target.(*ErrMissingURLInUpdate)
 	return ok
 }
+
+type HTTPError struct {
+	StatusCode int
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("HTTP error: %d", e.StatusCode)
+}
