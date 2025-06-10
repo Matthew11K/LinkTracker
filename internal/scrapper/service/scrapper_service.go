@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/common"
+	"github.com/central-university-dev/go-Matthew11K/internal/common/metrics"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/errors"
 	"github.com/central-university-dev/go-Matthew11K/internal/domain/models"
@@ -275,6 +276,8 @@ func (s *ScrapperService) CheckUpdates(ctx context.Context) error {
 		"count", len(links),
 	)
 
+	s.updateActiveLinksMetrics(links)
+
 	for _, link := range links {
 		func() {
 			s.logger.Info("Проверка ссылки",
@@ -493,8 +496,13 @@ func (s *ScrapperService) saveDetailsToRepository(ctx context.Context, link *mod
 
 //nolint:funlen // Функция целостная
 func (s *ScrapperService) checkLinkUpdate(ctx context.Context, link *models.Link) (bool, error) {
+	startTime := time.Now()
+
 	updater, err := s.updaterFactory.CreateUpdater(link.Type)
 	if err != nil {
+		linkType := string(link.Type)
+		metrics.RecordScrapeRequest(linkType, "error", time.Since(startTime))
+
 		return false, err
 	}
 
@@ -509,6 +517,9 @@ func (s *ScrapperService) checkLinkUpdate(ctx context.Context, link *models.Link
 			"url", link.URL,
 			"error", err,
 		)
+
+		linkType := string(link.Type)
+		metrics.RecordScrapeRequest(linkType, "error", time.Since(startTime))
 
 		return false, err
 	}
@@ -535,6 +546,9 @@ func (s *ScrapperService) checkLinkUpdate(ctx context.Context, link *models.Link
 			return false, err
 		}
 
+		linkType := string(link.Type)
+		metrics.RecordScrapeRequest(linkType, "success", time.Since(startTime))
+
 		return true, nil
 	}
 
@@ -554,6 +568,9 @@ func (s *ScrapperService) checkLinkUpdate(ctx context.Context, link *models.Link
 			return false, err
 		}
 
+		linkType := string(link.Type)
+		metrics.RecordScrapeRequest(linkType, "success", time.Since(startTime))
+
 		return true, nil
 	}
 
@@ -567,6 +584,9 @@ func (s *ScrapperService) checkLinkUpdate(ctx context.Context, link *models.Link
 	if err != nil {
 		return false, err
 	}
+
+	linkType := string(link.Type)
+	metrics.RecordScrapeRequest(linkType, "success", time.Since(startTime))
 
 	return false, nil
 }
@@ -663,4 +683,34 @@ func (s *ScrapperService) UpdateNotificationSettings(ctx context.Context, chatID
 
 		return s.chatRepo.UpdateNotificationSettings(ctx, chatID, mode, digestTime)
 	})
+}
+
+func (s *ScrapperService) UpdateActiveLinksMetrics(ctx context.Context) {
+	links, err := s.linkRepo.GetAll(ctx)
+	if err != nil {
+		s.logger.Error("Ошибка при получении ссылок для метрик", "error", err)
+		return
+	}
+
+	s.updateActiveLinksMetrics(links)
+}
+
+func (s *ScrapperService) updateActiveLinksMetrics(links []*models.Link) {
+	linkCounts := make(map[string]int)
+
+	for _, link := range links {
+		linkType := string(link.Type)
+		linkCounts[linkType]++
+	}
+
+	for linkType, count := range linkCounts {
+		metrics.UpdateActiveLinksCount(linkType, float64(count))
+	}
+
+	allTypes := []string{"github", "stackoverflow"}
+	for _, linkType := range allTypes {
+		if _, exists := linkCounts[linkType]; !exists {
+			metrics.UpdateActiveLinksCount(linkType, 0)
+		}
+	}
 }

@@ -87,6 +87,10 @@ func (s *ParallelScheduler) Stop() {
 func (s *ParallelScheduler) ProcessBatches(ctx context.Context) {
 	s.logger.Info("Начало обработки ссылок")
 
+	if linkService, ok := s.linkProcessor.(interface{ UpdateActiveLinksMetrics(ctx context.Context) }); ok {
+		linkService.UpdateActiveLinksMetrics(ctx)
+	}
+
 	offset := 0
 	batchNum := 1
 	processedCount := 0

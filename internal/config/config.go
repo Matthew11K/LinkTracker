@@ -17,6 +17,8 @@ type Config struct {
 	TelegramBotToken       string        `mapstructure:"TELEGRAM_BOT_TOKEN"`
 	BotServerPort          int           `mapstructure:"BOT_SERVER_PORT"`
 	ScrapperServerPort     int           `mapstructure:"SCRAPPER_SERVER_PORT"`
+	BotMetricsPort         int           `mapstructure:"BOT_METRICS_PORT"`
+	ScrapperMetricsPort    int           `mapstructure:"SCRAPPER_METRICS_PORT"`
 	ScrapperBaseURL        string        `mapstructure:"SCRAPPER_BASE_URL"`
 	BotBaseURL             string        `mapstructure:"BOT_BASE_URL"`
 	SchedulerCheckInterval time.Duration `mapstructure:"SCHEDULER_CHECK_INTERVAL"`
@@ -88,6 +90,8 @@ func LoadConfig() *Config {
 func setDefaults() {
 	viper.SetDefault("BOT_SERVER_PORT", 8080)
 	viper.SetDefault("SCRAPPER_SERVER_PORT", 8081)
+	viper.SetDefault("BOT_METRICS_PORT", 9094)
+	viper.SetDefault("SCRAPPER_METRICS_PORT", 9095)
 	viper.SetDefault("SCRAPPER_BASE_URL", "http://link_tracker_scrapper:8081")
 	viper.SetDefault("BOT_BASE_URL", "http://link_tracker_bot:8080")
 	viper.SetDefault("SCHEDULER_CHECK_INTERVAL", "1m")
@@ -138,6 +142,8 @@ func getDefaultConfig() *Config {
 	return &Config{
 		BotServerPort:          8080,
 		ScrapperServerPort:     8081,
+		BotMetricsPort:         9094,
+		ScrapperMetricsPort:    9095,
 		ScrapperBaseURL:        "http://link_tracker_scrapper:8081",
 		BotBaseURL:             "http://link_tracker_bot:8080",
 		SchedulerCheckInterval: 1 * time.Minute,

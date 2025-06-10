@@ -3,9 +3,11 @@ package telegram
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/central-university-dev/go-Matthew11K/internal/bot/domain"
+	"github.com/central-university-dev/go-Matthew11K/internal/common/metrics"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
@@ -98,6 +100,13 @@ func (p *Poller) processUpdate(update *tgbotapi.Update) {
 		"text", text,
 		"username", username,
 	)
+
+	messageType := "message"
+	if update.Message.IsCommand() {
+		messageType = "command"
+	}
+
+	metrics.RecordUserMessage(strconv.FormatInt(chatID, 10), messageType)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

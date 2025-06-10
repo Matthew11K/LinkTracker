@@ -14,6 +14,7 @@ import (
 
 	"github.com/central-university-dev/go-Matthew11K/internal/api/openapi/v1_scrapper"
 	"github.com/central-university-dev/go-Matthew11K/internal/common"
+	"github.com/central-university-dev/go-Matthew11K/internal/common/metrics"
 	"github.com/central-university-dev/go-Matthew11K/internal/common/middleware"
 	"github.com/central-university-dev/go-Matthew11K/internal/config"
 	"github.com/central-university-dev/go-Matthew11K/internal/database"
@@ -218,7 +219,18 @@ func run() error {
 		appLogger,
 	)
 
-	serverWithMiddleware := rateLimiter.Middleware(server)
+	metricsMiddleware := middleware.NewMetricsMiddleware("scrapper")
+
+	serverWithMiddleware := rateLimiter.Middleware(metricsMiddleware.Middleware(server))
+
+	metricsServer := metrics.NewMetricsServer(cfg.ScrapperMetricsPort, appLogger)
+	go func() {
+		if err := metricsServer.Start(ctx); err != nil {
+			appLogger.Error("Ошибка при запуске сервера метрик",
+				"error", err,
+			)
+		}
+	}()
 
 	var sch interface {
 		Start()

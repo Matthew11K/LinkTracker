@@ -24,6 +24,7 @@ import (
 	botservice "github.com/central-university-dev/go-Matthew11K/internal/bot/service"
 	"github.com/central-university-dev/go-Matthew11K/internal/bot/telegram"
 	commonservice "github.com/central-university-dev/go-Matthew11K/internal/common"
+	"github.com/central-university-dev/go-Matthew11K/internal/common/metrics"
 	"github.com/central-university-dev/go-Matthew11K/internal/common/middleware"
 	"github.com/central-university-dev/go-Matthew11K/internal/config"
 	"github.com/central-university-dev/go-Matthew11K/internal/database"
@@ -241,7 +242,18 @@ func run() error {
 		appLogger,
 	)
 
-	serverWithMiddleware := rateLimiter.Middleware(server)
+	metricsMiddleware := middleware.NewMetricsMiddleware("bot")
+
+	serverWithMiddleware := rateLimiter.Middleware(metricsMiddleware.Middleware(server))
+
+	metricsServer := metrics.NewMetricsServer(cfg.BotMetricsPort, appLogger)
+	go func() {
+		if err := metricsServer.Start(ctx); err != nil {
+			appLogger.Error("Ошибка при запуске сервера метрик",
+				"error", err,
+			)
+		}
+	}()
 
 	poller := telegram.NewPoller(telegramClient, botService, appLogger)
 	go poller.Start()
